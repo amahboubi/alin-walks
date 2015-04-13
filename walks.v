@@ -134,22 +134,24 @@ Definition move_of_step (s : step) (g : grid) : grid :=
     |_ => Grid (g1 - 1, g2 + 1)
   end.
 
+Arguments move_of_step : simpl never.
 
 (* In our comments, we call 'trajectory' the sequence of positions prescribed *)
-(* by a sequence of steps. *)
+(* by a sequence of steps w , from a starting point g of the grid. *)
 
-(* We interpret a sequence of steps as successive moves on the grid, starting
-   from the origin. (position w) computes the position reached at the end of
-   the trajectory associated with w *)
+Definition final_pos := foldr move_of_step.
 
-Fixpoint fposition (w : seq step) : grid :=
-  match w with
-    |[::]    => origin
-    |s :: w' => move_of_step s (fposition w')
-  end.
+Lemma final_pos_nil g : final_pos g [::] = g. Proof. by []. Qed.
 
-(* Several predicates on the final position of a trajectory *)
+Lemma final_pos_cons g s w : final_pos g (s :: w) = move_of_step s (final_pos g w).
+Proof. by []. Qed.
 
-Definition diag_walk (w : seq step) : bool := diag (fposition w).
+Lemma final_pos_cat g w1 w2 :
+  final_pos g (w1 ++ w2) = final_pos (final_pos g w2) w1.
+Proof. by rewrite /final_pos foldr_cat. Qed.
 
-Definition excursion (w : seq step) : bool := fposition w == origin.
+(* Several predicates on the final position of a final_pos *)
+
+Definition diag_walk (g : grid) (w : seq step) : bool := diag (final_pos g w).
+
+Definition excursion (g : grid) (w : seq step) : bool := final_pos g w == origin.
