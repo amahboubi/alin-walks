@@ -14,7 +14,8 @@ Open Scope ring_scope.
    - North (coded by 0)
    - West (coded by 1)
    - SouthEast (coded by 2)
-*)
+Hence we represent steps as (a wrapper around) type 'I_3, which has exactly
+three elements. *)
 
 Inductive step := Step of 'I_3.
 
@@ -40,7 +41,7 @@ Canonical  step_finType    := FinType step step_finMixin.
 Canonical  step_subFinType := Eval hnf in [subFinType of step].
 (* End boilerplate code *)
 
-(* A walk is a sequence of steps *)
+(* A walk is (a wrapper around) a sequence of steps *)
 Inductive walk := Walk of seq step.
 
 
@@ -63,7 +64,7 @@ Canonical  walk_subCountType := Eval hnf in [subCountType of walk].
 (* End boilerplate code *)
 
 
-(* A two-dimentional grid. *)
+(* A two-dimentional grid, as (a  warpper around) pairs of  integers *)
 
 Inductive grid := Grid of int * int.
 
@@ -119,7 +120,6 @@ Definition IIIquandrant (g : grid) : bool := shalf g && whalf g.
 Definition IVquandrant (g : grid) : bool := shalf g && ehalf g.
 
 
-
 (* We interpret each step as a function : grid -> grid, with the following
    semantic:
    - North (coded by 0) means increasing ordinate of 1, leaving abscissia unchanged
@@ -131,16 +131,25 @@ Definition move_of_step (s : step) (g : grid) : grid :=
   match nat_of_ord s with
     |0 => Grid (g1, g2 +1)
     |1 => Grid (g1 - 1, g2)
-    |_ => Grid (g1 -1, g2 + 1)
+    |_ => Grid (g1 - 1, g2 + 1)
   end.
+
+
+(* In our comments, we call 'trajectory' the sequence of positions prescribed *)
+(* by a sequence of steps. *)
 
 (* We interpret a sequence of steps as successive moves on the grid, starting
-   from the origin *)
+   from the origin. (position w) computes the position reached at the end of
+   the trajectory associated with w *)
 
-Fixpoint position (w : seq step) : grid :=
+Fixpoint fposition (w : seq step) : grid :=
   match w with
     |[::]    => origin
-    |s :: w' => move_of_step s (position w')
+    |s :: w' => move_of_step s (fposition w')
   end.
 
-(* *)
+(* Several predicates on the final position of a trajectory *)
+
+Definition diag_walk (w : seq step) : bool := diag (fposition w).
+
+Definition excursion (w : seq step) : bool := fposition w == origin.
