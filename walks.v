@@ -13,7 +13,7 @@ Open Scope ring_scope.
 (* Three natures of (small) steps are allowed:
    - North (coded by 0)
    - West (coded by 1)
-   - SouthWest (coded by 2)
+   - SouthEast (coded by 2)
 *)
 
 Inductive step := Step of 'I_3.
@@ -95,7 +95,7 @@ Definition ord (g : grid) := g.2.
    semantic:
    - North (coded by 0) means increasing ordinate of 1, leaving abscissia unchanged
    - West (coded by 1) means decreasing abscissia of 1, leaving ordinate unchanged
-   - SouthWest (coded by 2) means decreading both ordinate and abscissia. *)
+   - SouthEast (coded by 2) means decreading both ordinate and abscissia. *)
 
 Definition move_of_step (s : step) (g : grid) : grid :=
   let: Grid (g1, g2) := g in
