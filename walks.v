@@ -108,16 +108,16 @@ Definition ehalf (g : grid) : bool := g.1 >= 0.
 Definition whalf (g : grid) : bool := g.1 <= 0.
 
 (* Quandrant I *)
-Definition Iquandrant (g : grid) : bool := nhalf g && ehalf g.
+Definition Iquadrant (g : grid) : bool := nhalf g && ehalf g.
 
-(* Quandrant II *)
-Definition IIquandrant (g : grid) : bool := nhalf g && whalf g.
+(* (* Quandrant II *) *)
+(* Definition IIquadrant (g : grid) : bool := nhalf g && whalf g. *)
 
-(* Quandrant III *)
-Definition IIIquandrant (g : grid) : bool := shalf g && whalf g.
+(* (* Quandrant III *) *)
+(* Definition IIIquadrant (g : grid) : bool := shalf g && whalf g. *)
 
-(* Quandrant IV *)
-Definition IVquandrant (g : grid) : bool := shalf g && ehalf g.
+(* (* Quandrant IV *) *)
+(* Definition IVquadrant (g : grid) : bool := shalf g && ehalf g. *)
 
 
 (* We interpret each step as a function : grid -> grid, with the following
@@ -153,13 +153,7 @@ Lemma final_pos_cat g w1 w2 :
   final_pos g (w1 ++ w2) = final_pos (final_pos g w1) w2.
 Proof. by rewrite /final_pos foldl_cat. Qed.
 
-(* Several predicates on the final position of a final_pos *)
-
-Definition diag_walk (g : grid) (w : seq step) : bool := diag (final_pos g w).
-
-Definition excursion (g : grid) (w : seq step) : bool := final_pos g w == origin.
-
-Definition trajectory g w := scanl move_of_step g w.
+Definition trajectory := scanl move_of_step.
 
 Lemma trajectory_nil g : trajectory g [::] = [::]. by []. Qed.
 
@@ -172,3 +166,21 @@ Proof.
 rewrite /final_pos /trajectory (last_nth g) size_scanl; case: w => [| s w] //.
 by rewrite [size _]/= [LHS]nth_scanl // -[(size w).+1]/(size (s :: w)) take_size.
 Qed.
+
+Lemma trajectory_cat g w1 w2 :
+  trajectory g (w1 ++ w2) = trajectory g w1 ++ (trajectory (final_pos g w1) w2).
+Proof. by rewrite /trajectory scanl_cat. Qed.
+
+(* Several predicates on the final position of a final_pos *)
+
+Definition diag_traj (g : grid) (w : seq step) : bool :=
+  diag (final_pos g w).
+
+Definition to_origin_traj (g : grid) (w : seq step) : bool :=
+  final_pos g w == origin.
+
+Definition Iquadrant_traj (g : grid) (w : seq step) : bool :=
+  all Iquadrant (trajectory g w).
+
+Definition nhalf_traj (g : grid) (w : seq step) : bool :=
+  all nhalf (trajectory g w).
