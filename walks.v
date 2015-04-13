@@ -91,6 +91,35 @@ Definition origin := Grid (0, 0).
 Definition abs (g : grid) := g.1.
 Definition ord (g : grid) := g.2.
 
+(* Several predicates describing zones of interest in the grid *)
+Definition diag (g : grid) : bool := g.1 == g.2.
+
+(* North (closed) half plane *)
+Definition nhalf (g : grid) : bool := g.2 >= 0.
+
+(* South (closed) half plane *)
+Definition shalf (g : grid) : bool := g.2 <= 0.
+
+(* East (closed) half plane *)
+Definition ehalf (g : grid) : bool := g.1 >= 0.
+
+(* West (closed) half plane *)
+Definition whalf (g : grid) : bool := g.1 <= 0.
+
+(* Quandrant I *)
+Definition Iquandrant (g : grid) : bool := nhalf g && ehalf g.
+
+(* Quandrant II *)
+Definition IIquandrant (g : grid) : bool := nhalf g && whalf g.
+
+(* Quandrant III *)
+Definition IIIquandrant (g : grid) : bool := shalf g && whalf g.
+
+(* Quandrant IV *)
+Definition IVquandrant (g : grid) : bool := shalf g && ehalf g.
+
+
+
 (* We interpret each step as a function : grid -> grid, with the following
    semantic:
    - North (coded by 0) means increasing ordinate of 1, leaving abscissia unchanged
@@ -113,3 +142,5 @@ Fixpoint position (w : seq step) : grid :=
     |[::]    => origin
     |s :: w' => move_of_step s (position w')
   end.
+
+(* *)
