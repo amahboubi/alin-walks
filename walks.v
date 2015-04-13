@@ -126,7 +126,7 @@ Definition IVquandrant (g : grid) : bool := shalf g && ehalf g.
    - West (coded by 1) means decreasing abscissia of 1, leaving ordinate unchanged
    - SouthEast (coded by 2) means decreading both ordinate and abscissia. *)
 
-Definition move_of_step (s : step) (g : grid) : grid :=
+Definition move_of_step (g : grid) (s : step) : grid :=
   let: Grid (g1, g2) := g in
   match nat_of_ord s with
     |0 => Grid (g1, g2 +1)
@@ -136,22 +136,39 @@ Definition move_of_step (s : step) (g : grid) : grid :=
 
 Arguments move_of_step : simpl never.
 
-(* In our comments, we call 'trajectory' the sequence of positions prescribed *)
-(* by a sequence of steps w , from a starting point g of the grid. *)
+(* We call 'trajectory' the sequence of positions prescribed by a sequence of
+   steps w , from a starting point g of the grid. If the list of steps is of the
+   form s :: w, the move coded by s is executed first. (final_pos g w) is the
+   final position on the grid reached at the end of the trajectory.*)
 
-Definition final_pos := foldr move_of_step.
+Definition final_pos := foldl move_of_step.
 
 Lemma final_pos_nil g : final_pos g [::] = g. Proof. by []. Qed.
 
-Lemma final_pos_cons g s w : final_pos g (s :: w) = move_of_step s (final_pos g w).
+Lemma final_pos_cons g s w :
+  final_pos g (s :: w) = final_pos (move_of_step g s) w.
 Proof. by []. Qed.
 
 Lemma final_pos_cat g w1 w2 :
-  final_pos g (w1 ++ w2) = final_pos (final_pos g w2) w1.
-Proof. by rewrite /final_pos foldr_cat. Qed.
+  final_pos g (w1 ++ w2) = final_pos (final_pos g w1) w2.
+Proof. by rewrite /final_pos foldl_cat. Qed.
 
 (* Several predicates on the final position of a final_pos *)
 
 Definition diag_walk (g : grid) (w : seq step) : bool := diag (final_pos g w).
 
 Definition excursion (g : grid) (w : seq step) : bool := final_pos g w == origin.
+
+Definition trajectory g w := scanl move_of_step g w.
+
+Lemma trajectory_nil g : trajectory g [::] = [::]. by []. Qed.
+
+Lemma trajectory_cons g s w :
+  trajectory g (s :: w) = (move_of_step g s) :: trajectory (move_of_step g s) w.
+Proof. by []. Qed.
+
+Lemma last_trajectory g w : last g (trajectory g w) = final_pos g w.
+Proof.
+rewrite /final_pos /trajectory (last_nth g) size_scanl; case: w => [| s w] //.
+by rewrite [size _]/= [LHS]nth_scanl // -[(size w).+1]/(size (s :: w)) take_size.
+Qed.
