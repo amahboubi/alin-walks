@@ -173,7 +173,7 @@ Proof. by rewrite /trajectory scanl_cat. Qed.
 
 (* Several predicates on the final position of a final_pos *)
 
-Definition diag_traj (g : grid) (w : seq step) : bool :=
+Definition to_diag_traj (g : grid) (w : seq step) : bool :=
   diag (final_pos g w).
 
 Definition to_origin_traj (g : grid) (w : seq step) : bool :=
@@ -184,3 +184,23 @@ Definition Iquadrant_traj (g : grid) (w : seq step) : bool :=
 
 Definition nhalf_traj (g : grid) (w : seq step) : bool :=
   all nhalf (trajectory g w).
+
+(* Now we have all the necessary vocabulary to describe the families of walks
+   the exercise is about *)
+
+(* A walk of length n is an 'A-walk' if its trajectory from the origin stays in
+   the upper (north) half-plane and ends at the origin: *)
+Definition Awalk (n : nat) (w : n.-tuple step) :=
+  nhalf_traj origin w && to_origin_traj origin w.
+
+Arguments Awalk n w.
+(* I don't want n to be implicit but this seems to fail: the global Set wins?*)
+
+
+(* A walk of length n is a 'B-walk' if its trajectory from the origin stays in
+   quadrant I and ends somewhere on the diagonal: *)
+Definition Bwalk (n : nat) (w : n.-tuple step) :=
+  Iquadrant_traj origin w && to_diag_traj origin w.
+
+(* And the conjecture is the following: *)
+(* Conjecture card_Awalks_Bwalks : forall n : nat, #|@Awalk n| = #|@Bwalk n|. *)
