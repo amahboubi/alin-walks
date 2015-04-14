@@ -1,13 +1,10 @@
 Require Import ssreflect ssrfun ssrbool eqtype ssrnat seq.
 Require Import choice tuple finfun fintype finset.
 Require Import finfun bigop ssralg ssrnum poly ssrint.
-Import GRing.Theory Num.Theory.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
-
-Open Scope ring_scope.
 
 
 (* Three natures of (small) steps are allowed:
@@ -41,31 +38,45 @@ Canonical  step_finType    := FinType step step_finMixin.
 Canonical  step_subFinType := Eval hnf in [subFinType of step].
 (* End boilerplate code *)
 
-(* A walk is (a wrapper around) a sequence of steps *)
-Inductive walk := Walk of seq step.
+(* Boolean predicates characterizing each nature of step *)
+Definition north (s : step) := nat_of_ord s == 0%N.
 
+Definition west (s : step) := nat_of_ord s == 1%N.
 
-(* Boilerplate code to install the structures of equality, countable, choice
-   type on type step, plus a coercion from walk to sequences. *)
+Definition seast (s : step) := nat_of_ord s == 2%N.
 
-Coercion seq_of_walk (p : walk) := let: Walk n := p in n.
+(* Case analysis on a step *)
+Inductive NxWxSE (s : step) : bool -> bool -> bool -> Type :=
+  |North : (north s) -> NxWxSE s true false false
+  |West : (west s) -> NxWxSE s false true false
+  |SEast : (seast s) -> NxWxSE s false false true.
 
-Canonical walk_subType := Eval hnf in [newType for seq_of_walk].
+Lemma stepP (s : step) : NxWxSE s (north s) (west s) (seast s).
+Proof.
+case: s; case; case => [| m] /=; first by move=> *; exact: North.
+case: m => [| m];  first by move=> *; exact: West.
+case: m => [| m] //; move=> *; exact: SEast.
+Qed.
 
-Definition walk_eqMixin := [eqMixin of walk by <:].
-Canonical  walk_eqType  := EqType walk walk_eqMixin.
+Definition count_north (w : seq step) := count north w.
 
-Definition walk_choiceMixin := [choiceMixin of walk by <:].
-Canonical  walk_choiceType  := ChoiceType walk walk_choiceMixin.
+Definition count_west (w : seq step) := count west w.
 
-Definition walk_countMixin   := [countMixin of walk by <:].
-Canonical  walk_countType    := CountType walk walk_countMixin.
-Canonical  walk_subCountType := Eval hnf in [subCountType of walk].
-(* End boilerplate code *)
+Definition count_seast (w : seq step) := count seast w.
 
+Lemma count_steps_size (w : seq step) :
+  count north w + count west w + count seast w = size w.
+Proof.
+elim: w => // s l ihl /=; case: stepP=> ds /=; rewrite !add0n -ihl.
+- by rewrite -[RHS]add1n !addnA.
+- by rewrite [_ + (1 + _)]addnCA -!addnA add1n.
+- by rewrite [_ + (1 + _)]addnCA add1n.
+Qed.
 
 (* A two-dimentional grid, as (a  warpper around) pairs of  integers *)
 
+Import GRing.Theory Num.Theory.
+Open Scope ring_scope.
 Inductive grid := Grid of int * int.
 
 (* Boilerplate code to install the structures of equality, countable, choice
@@ -125,6 +136,7 @@ Definition Iquadrant (g : grid) : bool := nhalf g && ehalf g.
    - North (coded by 0) means increasing ordinate of 1, leaving abscissia unchanged
    - West (coded by 1) means decreasing abscissia of 1, leaving ordinate unchanged
    - SouthEast (coded by 2) means decreading both ordinate and abscissia. *)
+
 
 Definition move_of_step (g : grid) (s : step) : grid :=
   let: Grid (g1, g2) := g in
@@ -187,6 +199,31 @@ Definition nhalf_traj (g : grid) (w : seq step) : bool :=
 
 (* Now we have all the necessary vocabulary to describe the families of walks
    the exercise is about *)
+
+
+
+(* A walk is (a wrapper around) a sequence of steps *)
+Inductive walk := Walk of seq step.
+
+
+(* Boilerplate code to install the structures of equality, countable, choice
+   type on type step, plus a coercion from walk to sequences. *)
+
+Coercion seq_of_walk (p : walk) := let: Walk n := p in n.
+
+Canonical walk_subType := Eval hnf in [newType for seq_of_walk].
+
+Definition walk_eqMixin := [eqMixin of walk by <:].
+Canonical  walk_eqType  := EqType walk walk_eqMixin.
+
+Definition walk_choiceMixin := [choiceMixin of walk by <:].
+Canonical  walk_choiceType  := ChoiceType walk walk_choiceMixin.
+
+Definition walk_countMixin   := [countMixin of walk by <:].
+Canonical  walk_countType    := CountType walk walk_countMixin.
+Canonical  walk_subCountType := Eval hnf in [subCountType of walk].
+(* End boilerplate code *)
+
 
 (* A walk of length n is an 'A-walk' if its trajectory from the origin stays in
    the upper (north) half-plane and ends at the origin: *)
