@@ -202,42 +202,42 @@ Definition nhalf_traj (g : grid) (w : seq step) : bool :=
 
 
 
-(* A walk is (a wrapper around) a sequence of steps *)
-Inductive walk := Walk of seq step.
+(* A (walk n) is (a wrapper around) a sequence of size n  *)
+Inductive walk (n : nat) := Walk of n.-tuple step.
 
 
-(* Boilerplate code to install the structures of equality, countable, choice
-   type on type step, plus a coercion from walk to sequences. *)
+(* Boilerplate code to install the structures of equality, countable, choice and
+   finite type on type (walk n), plus a coercion from (walk n) to n-tuple. *)
 
-Coercion seq_of_walk (p : walk) := let: Walk n := p in n.
+Coercion tuple_of_walk (n : nat) (w : walk n) := let: Walk t := w in t.
 
-Canonical walk_subType := Eval hnf in [newType for seq_of_walk].
+Canonical walk_subType (n : nat) := Eval hnf in [newType for (@tuple_of_walk n)].
 
-Definition walk_eqMixin := [eqMixin of walk by <:].
-Canonical  walk_eqType  := EqType walk walk_eqMixin.
+Definition walk_eqMixin (n : nat) := [eqMixin of (walk n) by <:].
+Canonical  walk_eqType (n : nat) := EqType (walk n) (walk_eqMixin n).
 
-Definition walk_choiceMixin := [choiceMixin of walk by <:].
-Canonical  walk_choiceType  := ChoiceType walk walk_choiceMixin.
+Definition walk_choiceMixin (n : nat) := [choiceMixin of (walk n) by <:].
+Canonical  walk_choiceType (n : nat) := ChoiceType (walk n) (walk_choiceMixin n).
 
-Definition walk_countMixin   := [countMixin of walk by <:].
-Canonical  walk_countType    := CountType walk walk_countMixin.
-Canonical  walk_subCountType := Eval hnf in [subCountType of walk].
+Definition walk_countMixin (n : nat) := [countMixin of (walk n) by <:].
+Canonical  walk_countType (n : nat)  := CountType (walk n) (walk_countMixin n).
+Canonical  walk_subCountType (n : nat) := Eval hnf in [subCountType of (walk n)].
+
+Definition walk_finMixin (n : nat)  := [finMixin of (walk n) by <:].
+Canonical  walk_finType (n : nat)   := FinType (walk n) (walk_finMixin n).
+Canonical  walk_subFinType (n : nat) := Eval hnf in [subFinType of (walk n)].
 (* End boilerplate code *)
 
 
 (* A walk of length n is an 'A-walk' if its trajectory from the origin stays in
    the upper (north) half-plane and ends at the origin: *)
-Definition Awalk (n : nat) (w : n.-tuple step) :=
+Definition Awalk (n : nat) (w : walk n) :=
   nhalf_traj origin w && to_origin_traj origin w.
-
-Arguments Awalk n w.
-(* I don't want n to be implicit but this seems to fail: the global Set wins?*)
-
 
 (* A walk of length n is a 'B-walk' if its trajectory from the origin stays in
    quadrant I and ends somewhere on the diagonal: *)
-Definition Bwalk (n : nat) (w : n.-tuple step) :=
+Definition Bwalk (n : nat) (w : walk n) :=
   Iquadrant_traj origin w && to_diag_traj origin w.
 
 (* And the conjecture is the following: *)
-(* Conjecture card_Awalks_Bwalks : forall n : nat, #|@Awalk n| = #|@Bwalk n|. *)
+ Conjecture card_Awalks_Bwalks : forall n : nat, #|@Awalk n| = #|@Bwalk n|.
