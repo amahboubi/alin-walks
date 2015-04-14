@@ -14,63 +14,57 @@ Unset Printing Implicit Defensive.
 Hence we represent steps as (a wrapper around) type 'I_3, which has exactly
 three elements. *)
 
-Inductive step := Step of 'I_3.
+Inductive step : Type := N | W | SE.
 
-(* Boilerplate code to install the structures of equality, countable, choice,
-   finite type on type step, plus a coercion from step to finite ordinals *)
 
-Coercion ord_of_step (p : step) := let: Step n := p in n.
+(* Installing  structures of equality, countable, choice,
+   finite type on type step, plus a coercion from step to finite ordinals. We proceed
+   by showing that ord_of_step : step -> 'I_3 has a left inverse, where I_3 is the
+   enumerated type type with elements 0, 1, 2. *)
 
-Canonical step_subType := Eval hnf in [newType for ord_of_step].
+Definition ord_of_step (s : step) : 'I_3 :=
+  match s with
+    |N => @Ordinal 3 0 (refl_equal true)
+    |W => @Ordinal 3 1 (refl_equal true)
+    |SE => @Ordinal 3 2 (refl_equal true)
+  end.
 
-Definition step_eqMixin := [eqMixin of step by <:].
+Definition step_of_ord (o : 'I_3) : step :=
+  match nat_of_ord o with
+      |0 => N
+      |1 => W
+      |_ => SE
+  end.
+
+Lemma ord_of_stepK : cancel ord_of_step step_of_ord.
+Proof. by case. Qed.
+
+Definition step_eqMixin := CanEqMixin ord_of_stepK.
 Canonical  step_eqType  := EqType step step_eqMixin.
 
-Definition step_choiceMixin := [choiceMixin of step by <:].
+Definition step_choiceMixin := CanChoiceMixin ord_of_stepK.
 Canonical  step_choiceType  := ChoiceType step step_choiceMixin.
 
-Definition step_countMixin   := [countMixin of step by <:].
-Canonical  step_countType    := CountType step step_countMixin.
-Canonical  step_subCountType := Eval hnf in [subCountType of step].
+Definition step_countMixin := CanCountMixin ord_of_stepK.
+Canonical  step_countType  := CountType step step_countMixin.
 
-Definition step_finMixin   := [finMixin of step by <:].
+Definition step_finMixin   := CanFinMixin ord_of_stepK.
 Canonical  step_finType    := FinType step step_finMixin.
-Canonical  step_subFinType := Eval hnf in [subFinType of step].
-(* End boilerplate code *)
-
-Definition north : step := Step (@Ordinal 3 0 (refl_equal true)).
-Definition west  : step := Step (@Ordinal 3 1 (refl_equal true)).
-Definition seast : step := Step (@Ordinal 3 2 (refl_equal true)).
-
 
 (* Boolean predicates characterizing each nature of step *)
-Definition is_north (s : step) := s == north.
-Definition is_west (s : step)  := s == west.
-Definition is_seast (s : step) := s == seast.
+Definition is_N (s : step) := s == N.
+Definition is_W (s : step)  := s == W.
+Definition is_SE (s : step) := s == SE.
 
-(* Case analysis on a step *)
-Inductive NxWxSE (s : step) : bool -> bool -> bool -> Type :=
-  |North : (is_north s) -> NxWxSE s true false false
-  |West : (is_west s) -> NxWxSE s false true false
-  |SEast : (is_seast s) -> NxWxSE s false false true.
 
-Lemma stepP (s : step) : NxWxSE s (is_north s) (is_west s) (is_seast s).
-Proof.
-case: s; case; case => [| m] /=; first by move=> *; exact: North.
-case: m => [| m];  first by move=> *; exact: West.
-case: m => [| m] //; move=> *; exact: SEast.
-Qed.
-
-Definition count_north (w : seq step) := count is_north w.
-
-Definition count_west (w : seq step) := count is_west w.
-
-Definition count_seast (w : seq step) := count is_seast w.
+Definition count_N : seq step -> nat := count is_N.
+Definition count_W : seq step -> nat := count is_W.
+Definition count_SE : seq step -> nat := count is_SE.
 
 Lemma count_steps_size (w : seq step) :
-  count_north w + count_west w + count_seast w = size w.
+  count_N w + count_W w + count_SE w = size w.
 Proof.
-elim: w => // s l ihl /=; case: stepP=> ds /=; rewrite !add0n -ihl.
+elim: w => // [[]] l /= <-; rewrite !add0n.
 - by rewrite -[RHS]add1n !addnA.
 - by rewrite [_ + (1 + _)]addnCA -!addnA add1n.
 - by rewrite [_ + (1 + _)]addnCA add1n.
@@ -102,24 +96,25 @@ Canonical  grid_subCountType := Eval hnf in [subCountType of grid].
 
 (* Origin of the grid *)
 Definition origin := Grid (0, 0).
+
 (* Abscissia and ordinate of a point of the grid *)
-Definition abs (g : grid) := g.1.
-Definition ord (g : grid) := g.2.
+Notation abs  := (fun g : grid => g.1).
+Notation ord  := (fun g : grid => g.2).
 
 (* Several predicates describing zones of interest in the grid *)
-Definition diag (g : grid) : bool := g.1 == g.2.
+Definition diag (g : grid) : bool := abs g == ord g.
 
 (* North (closed) half plane *)
-Definition nhalf (g : grid) : bool := g.2 >= 0.
+Definition nhalf (g : grid) : bool := ord g >= 0.
 
 (* South (closed) half plane *)
-Definition shalf (g : grid) : bool := g.2 <= 0.
+Definition shalf (g : grid) : bool := ord g <= 0.
 
 (* East (closed) half plane *)
-Definition ehalf (g : grid) : bool := g.1 >= 0.
+Definition ehalf (g : grid) : bool := abs g >= 0.
 
 (* West (closed) half plane *)
-Definition whalf (g : grid) : bool := g.1 <= 0.
+Definition whalf (g : grid) : bool := abs g <= 0.
 
 (* Quandrant I *)
 Definition Iquadrant (g : grid) : bool := nhalf g && ehalf g.
@@ -143,13 +138,41 @@ Definition Iquadrant (g : grid) : bool := nhalf g && ehalf g.
 
 Definition move_of_step (g : grid) (s : step) : grid :=
   let: Grid (g1, g2) := g in
-  match nat_of_ord s with
-    |0 => Grid (g1, g2 +1)
-    |1 => Grid (g1 - 1, g2)
-    |_ => Grid (g1 - 1, g2 + 1)
+  match s with
+    |N  => Grid (g1, g2 + 1)
+    |W  => Grid (g1 - 1, g2)
+    |SE => Grid (g1 + 1, g2 - 1)
   end.
 
 Arguments move_of_step : simpl never.
+
+Lemma move_of_north g : move_of_step g N = Grid (abs g, ord g + 1).
+Proof. by case: g; case=> g1 g2. Qed.
+
+Lemma move_of_west g : move_of_step g W = Grid (abs g - 1, ord g).
+Proof.  by case: g; case=> g1 g2. Qed.
+
+Lemma move_of_seast g : move_of_step g SE = Grid (abs g + 1, ord g - 1).
+Proof.  by case: g; case=> g1 g2. Qed.
+
+Lemma abs_move_N g : abs (move_of_step g N) = abs g.
+Proof. by rewrite move_of_north. Qed.
+
+Lemma abs_move_W g : abs (move_of_step g W) = abs g - 1.
+Proof. by rewrite move_of_west. Qed.
+
+Lemma abs_move_SE g : abs (move_of_step g SE) = abs g + 1.
+Proof. by rewrite move_of_seast. Qed.
+
+Lemma ord_move_N g : ord (move_of_step g N) = ord g + 1.
+Proof. by rewrite move_of_north. Qed.
+
+Lemma ord_move_W g : ord (move_of_step g W) = ord g.
+Proof. by rewrite move_of_west. Qed.
+
+Lemma ord_move_SE g : ord (move_of_step g SE) = ord g - 1.
+Proof. by rewrite move_of_seast. Qed.
+
 
 (* We call 'trajectory' the sequence of positions prescribed by a sequence of
    steps w , from a starting point g of the grid. If the list of steps is of the
@@ -167,6 +190,25 @@ Proof. by []. Qed.
 Lemma final_pos_cat g w1 w2 :
   final_pos g (w1 ++ w2) = final_pos (final_pos g w1) w2.
 Proof. by rewrite /final_pos foldl_cat. Qed.
+
+Lemma abs_final g w :
+  abs (final_pos g w) = abs g + (count_SE w)%:Z - (count_W w)%:Z.
+Proof.
+elim: w g => [| s w ihw] /= g; first by rewrite addrK.
+rewrite ihw; case: s => /=; rewrite !add0n ?add1n; first by rewrite abs_move_N.
+- by rewrite abs_move_W intS opprD addrACA addrA.
+- by rewrite abs_move_SE intS addrA.
+Qed.
+
+Lemma ord_final g w :
+  ord (final_pos g w) = ord g + (count_N w)%:Z - (count_SE w)%:Z.
+Proof.
+elim: w g => [| s w ihw] /= g; first by rewrite addrK.
+rewrite ihw; case: s => /=; rewrite !add0n ?add1n ?intS.
+- by rewrite ord_move_N addrA.
+- by rewrite ord_move_W.
+- by rewrite ord_move_SE opprD addrACA addrA.
+Qed.
 
 Definition trajectory := scanl move_of_step.
 
@@ -186,13 +228,29 @@ Lemma trajectory_cat g w1 w2 :
   trajectory g (w1 ++ w2) = trajectory g w1 ++ (trajectory (final_pos g w1) w2).
 Proof. by rewrite /trajectory scanl_cat. Qed.
 
-(* Several predicates on the final position of a final_pos *)
+(* Several predicates on the final position of a trajectory *)
 
 Definition to_diag_traj (g : grid) (w : seq step) : bool :=
   diag (final_pos g w).
 
-Definition to_origin_traj (g : grid) (w : seq step) : bool :=
-  final_pos g w == origin.
+(* Not sure this is the usefull form... *)
+Lemma to_diag_trajP (g : grid) (w : seq step) :
+  reflect (abs g + (count_SE w)%:Z -  (count_W w)%:Z =
+           ord g + (count_N w)%:Z - (count_SE w)%:Z)
+          (to_diag_traj g w).
+Proof. by apply: (iffP eqP); rewrite /to_diag_traj abs_final ord_final. Qed.
+
+Definition loop_traj (g : grid) (w : seq step) : bool := final_pos g w == g.
+
+Lemma loop_trajP (g : grid) (w : seq step) :
+  reflect (count_N w = count_SE w /\ count_SE w = count_W w) (loop_traj g w).
+Proof.
+apply: (iffP andP); rewrite ord_final abs_final; case; last first.
+  by move=> -> ->; rewrite !addrK.
+rewrite -addrA (can2_eq (addKr g.1) (addNKr g.1)) addNr subr_eq0; move/eqP=> e1.
+rewrite -addrA (can2_eq (addKr g.2) (addNKr g.2)) addNr subr_eq0; move/eqP=> e2.
+by case: e1 => <-; case: e2.
+Qed.
 
 Definition Iquadrant_traj (g : grid) (w : seq step) : bool :=
   all Iquadrant (trajectory g w).
@@ -200,9 +258,44 @@ Definition Iquadrant_traj (g : grid) (w : seq step) : bool :=
 Definition nhalf_traj (g : grid) (w : seq step) : bool :=
   all nhalf (trajectory g w).
 
+(* If g is in the north half plane and the trajectory along w from g stays in
+   the north half-plane, then for every prefix of w, the number of SE is smaller
+   than the number of N *)
+Lemma nhalf_traj_leSEN g w2 w1 : nhalf g -> nhalf_traj g (w1 ++ w2) ->
+  (count_SE w1)%:Z <= (count_N w1)%:Z.
+Proof. Admitted.
+
+(* A sequence is an Asequence if its associated trajectory from the origin stays in
+   the upper (north) half-plane and ends at the origin: *)
+
+Definition Aseq (w : seq step) := nhalf_traj origin w && loop_traj origin w.
+
+Lemma Aseq_nhalf w : w \in Aseq -> nhalf_traj origin w.
+Proof. by case/andP. Qed.
+
+Lemma Aseq_oloop w : w \in Aseq -> loop_traj origin w.
+Proof. by case/andP. Qed.
+
+(* An Aseq necessarily has an equal number of N, W and SE *)
+Lemma Aseq_count_NW : {in Aseq, count_N =1 count_W}.
+Proof. by move=> w /Aseq_oloop /loop_trajP; case=> ->. Qed.
+
+Lemma Aseq_count_SEW : {in Aseq, count_SE =1 count_W}.
+Proof. by move=> w /Aseq_oloop /loop_trajP; case=> _ ->. Qed.
+
+Lemma Aseq_count_NSE : {in Aseq, count_N =1 count_SE}.
+Proof. by move=> w Aw; rewrite /= Aseq_count_NW // Aseq_count_SEW. Qed.
+
+
+(* A sequence is a B-seqeunce if its trajectory from the origin stays in
+   quadrant I and ends somewhere on the diagonal: *)
+Definition Bseq (w : seq step) :=
+  Iquadrant_traj origin w && to_diag_traj origin w.
+
+
+
 (* Now we have all the necessary vocabulary to describe the families of walks
    the exercise is about *)
-
 
 
 (* A (walk n) is (a wrapper around) a sequence of size n  *)
@@ -231,24 +324,32 @@ Canonical  walk_finType (n : nat)   := FinType (walk n) (walk_finMixin n).
 Canonical  walk_subFinType (n : nat) := Eval hnf in [subFinType of (walk n)].
 (* End boilerplate code *)
 
+(* An n-Awalk is an Asequence of length n *)
+Definition Awalk (n : nat) (w : walk n) := Aseq w.
 
-(* A walk of length n is an 'A-walk' if its trajectory from the origin stays in
-   the upper (north) half-plane and ends at the origin: *)
-Definition Awalk (n : nat) (w : walk n) :=
-  nhalf_traj origin w && to_origin_traj origin w.
-
-(* A walk of length n is a 'B-walk' if its trajectory from the origin stays in
-   quadrant I and ends somewhere on the diagonal: *)
-Definition Bwalk (n : nat) (w : walk n) :=
-  Iquadrant_traj origin w && to_diag_traj origin w.
+(* An n-Bwalk is a B-sequence  of length n *)
+Definition Bwalk (n : nat) (w : walk n) := Bseq w.
 
 (* And the conjecture is the following: *)
-(*  Conjecture card_Awalks_Bwalks : forall n : nat, #|@Awalk n| = #|@Bwalk n|. *)
+(* Conjecture card_Awalks_Bwalks : forall n : nat, #|@Awalk n| = #|@Bwalk n|. *)
 
-Fixpoint naiveA2B (w : seq step) : seq step :=
-  match w with
-    | [::] => [::]
-    | s :: w' => if (is_west s) && (count_west w' < count_seast w')%N
-                 then s :: (naiveA2B w')
-                 else north :: (naiveA2B w')
-  end.
+(*  OBSOLETE Some code, to test programming. *)
+(* Fixpoint naiveA2B (w : seq step) : seq step := *)
+(*   match w with *)
+(*     |[::] => [::] *)
+(*     |s :: w' => if (is_W s) && (count_W w' < count_ w')%N *)
+(*                  then s :: (naiveA2B w') *)
+(*                  else north :: (naiveA2B w') *)
+(*   end. *)
+
+
+(* Fixpoint naiveB2A (w : seq step) : seq step := *)
+(*   match w with *)
+(*     |[::] => [::] *)
+(*     |s :: w' => if (is_north s) && ((count_north w) > (count_west w))%N *)
+(*                 then west :: (naiveB2A w') *)
+(*                 else s :: (naiveB2A w') *)
+(*   end. *)
+
+(* Lemma test : {in Bseq, cancel naiveB2A naiveA2B}. *)
+(* Proof. Admitted. *)
