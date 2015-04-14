@@ -38,34 +38,37 @@ Canonical  step_finType    := FinType step step_finMixin.
 Canonical  step_subFinType := Eval hnf in [subFinType of step].
 (* End boilerplate code *)
 
+Definition north : step := Step (@Ordinal 3 0 (refl_equal true)).
+Definition west  : step := Step (@Ordinal 3 1 (refl_equal true)).
+Definition seast : step := Step (@Ordinal 3 2 (refl_equal true)).
+
+
 (* Boolean predicates characterizing each nature of step *)
-Definition north (s : step) := nat_of_ord s == 0%N.
-
-Definition west (s : step) := nat_of_ord s == 1%N.
-
-Definition seast (s : step) := nat_of_ord s == 2%N.
+Definition is_north (s : step) := s == north.
+Definition is_west (s : step)  := s == west.
+Definition is_seast (s : step) := s == seast.
 
 (* Case analysis on a step *)
 Inductive NxWxSE (s : step) : bool -> bool -> bool -> Type :=
-  |North : (north s) -> NxWxSE s true false false
-  |West : (west s) -> NxWxSE s false true false
-  |SEast : (seast s) -> NxWxSE s false false true.
+  |North : (is_north s) -> NxWxSE s true false false
+  |West : (is_west s) -> NxWxSE s false true false
+  |SEast : (is_seast s) -> NxWxSE s false false true.
 
-Lemma stepP (s : step) : NxWxSE s (north s) (west s) (seast s).
+Lemma stepP (s : step) : NxWxSE s (is_north s) (is_west s) (is_seast s).
 Proof.
 case: s; case; case => [| m] /=; first by move=> *; exact: North.
 case: m => [| m];  first by move=> *; exact: West.
 case: m => [| m] //; move=> *; exact: SEast.
 Qed.
 
-Definition count_north (w : seq step) := count north w.
+Definition count_north (w : seq step) := count is_north w.
 
-Definition count_west (w : seq step) := count west w.
+Definition count_west (w : seq step) := count is_west w.
 
-Definition count_seast (w : seq step) := count seast w.
+Definition count_seast (w : seq step) := count is_seast w.
 
 Lemma count_steps_size (w : seq step) :
-  count north w + count west w + count seast w = size w.
+  count_north w + count_west w + count_seast w = size w.
 Proof.
 elim: w => // s l ihl /=; case: stepP=> ds /=; rewrite !add0n -ihl.
 - by rewrite -[RHS]add1n !addnA.
@@ -240,4 +243,12 @@ Definition Bwalk (n : nat) (w : walk n) :=
   Iquadrant_traj origin w && to_diag_traj origin w.
 
 (* And the conjecture is the following: *)
- Conjecture card_Awalks_Bwalks : forall n : nat, #|@Awalk n| = #|@Bwalk n|.
+(*  Conjecture card_Awalks_Bwalks : forall n : nat, #|@Awalk n| = #|@Bwalk n|. *)
+
+Fixpoint naiveA2B (w : seq step) : seq step :=
+  match w with
+    | [::] => [::]
+    | s :: w' => if (is_west s) && (count_west w' < count_seast w')%N
+                 then s :: (naiveA2B w')
+                 else north :: (naiveA2B w')
+  end.
