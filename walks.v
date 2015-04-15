@@ -74,6 +74,7 @@ Qed.
 
 Import GRing.Theory Num.Theory.
 Open Scope ring_scope.
+
 Inductive grid := Grid of int * int.
 
 (* Boilerplate code to install the structures of equality, countable, choice
@@ -105,7 +106,7 @@ Notation ord  := (fun g : grid => g.2).
 Definition diag (g : grid) : bool := abs g == ord g.
 
 (* North (closed) half plane *)
-Definition nhalf (g : grid) : bool := ord g >= 0.
+Definition nhalf (g : grid) : bool := 0 <= ord g.
 
 (* South (closed) half plane *)
 Definition shalf (g : grid) : bool := ord g <= 0.
@@ -117,16 +118,18 @@ Definition ehalf (g : grid) : bool := abs g >= 0.
 Definition whalf (g : grid) : bool := abs g <= 0.
 
 (* Quandrant I *)
-Definition Iquadrant (g : grid) : bool := nhalf g && ehalf g.
+Definition Iquadrant := predI nhalf ehalf.
+
+Arguments Iquadrant : simpl never.
 
 (* (* Quandrant II *) *)
-(* Definition IIquadrant (g : grid) : bool := nhalf g && whalf g. *)
+(* Definition IIquadrant : bool := predI nhalf whalf. *)
 
 (* (* Quandrant III *) *)
-(* Definition IIIquadrant (g : grid) : bool := shalf g && whalf g. *)
+(* Definition IIIquadrant : bool := predI shalf whalf. *)
 
 (* (* Quandrant IV *) *)
-(* Definition IVquadrant (g : grid) : bool := shalf g && ehalf g. *)
+(* Definition IVquadrant : bool := predI shalf ehalf. *)
 
 
 (* We interpret each step as a function : grid -> grid, with the following
@@ -174,7 +177,7 @@ Lemma ord_move_SE g : ord (move_of_step g SE) = ord g - 1.
 Proof. by rewrite move_of_seast. Qed.
 
 
-(* We call 'trajectory' the sequence of positions prescribed by a sequence of
+(* We call (trajectory g w) the sequence of positions prescribed by a sequence of
    steps w , from a starting point g of the grid. If the list of steps is of the
    form s :: w, the move coded by s is executed first. (final_pos g w) is the
    final position on the grid reached at the end of the trajectory.*)
@@ -228,17 +231,42 @@ Lemma trajectory_cat g w1 w2 :
   trajectory g (w1 ++ w2) = trajectory g w1 ++ (trajectory (final_pos g w1) w2).
 Proof. by rewrite /trajectory scanl_cat. Qed.
 
+Lemma size_trajectory g w : size (trajectory g w) = size w.
+Proof. by rewrite /trajectory size_scanl. Qed.
+
+Lemma nth_trajectory g1 g2 w n : (n < size w)%N ->
+   nth g1 (trajectory g2 w) n = final_pos g2 (take n.+1 w).
+Proof. by move=> ltnsw; rewrite nth_scanl. Qed.
+
+Lemma trajectory_final g w : final_pos g w \in g :: trajectory g w.
+Proof.
+case: w => [|s w]; first by rewrite /= mem_seq1.
+rewrite -[X in final_pos g X \in _]take_size [size _]/= -(nth_trajectory g) //.
+by rewrite in_cons mem_nth ?orbT // size_trajectory.
+Qed.
+
+Lemma trajectory_final_cons g s w :
+  final_pos g (s :: w) \in trajectory g (s :: w).
+Proof. by rewrite /=; exact: trajectory_final. Qed.
+
 (* Several predicates on the final position of a trajectory *)
 
 Definition to_diag_traj (g : grid) (w : seq step) : bool :=
   diag (final_pos g w).
 
 (* Not sure this is the usefull form... *)
-Lemma to_diag_trajP (g : grid) (w : seq step) :
-  reflect (abs g + (count_SE w)%:Z -  (count_W w)%:Z =
-           ord g + (count_N w)%:Z - (count_SE w)%:Z)
-          (to_diag_traj g w).
+Lemma to_diag_trajP g w :
+ reflect (abs g + (count_SE w)%:Z -  (count_W w)%:Z =
+          ord g + (count_N w)%:Z - (count_SE w)%:Z)
+         (to_diag_traj g w).
 Proof. by apply: (iffP eqP); rewrite /to_diag_traj abs_final ord_final. Qed.
+
+Lemma oto_diag_trajP w :
+ reflect ((count_SE w)%:Z - (count_W w)%:Z = (count_N w)%:Z - (count_SE w)%:Z)
+         (to_diag_traj origin w).
+Proof.
+rewrite -[LHS]add0r -[RHS]add0r !addrA; exact: (to_diag_trajP origin).
+Qed.
 
 Definition loop_traj (g : grid) (w : seq step) : bool := final_pos g w == g.
 
@@ -247,23 +275,113 @@ Lemma loop_trajP (g : grid) (w : seq step) :
 Proof.
 apply: (iffP andP); rewrite ord_final abs_final; case; last first.
   by move=> -> ->; rewrite !addrK.
-rewrite -addrA (can2_eq (addKr g.1) (addNKr g.1)) addNr subr_eq0; move/eqP=> e1.
-rewrite -addrA (can2_eq (addKr g.2) (addNKr g.2)) addNr subr_eq0; move/eqP=> e2.
-by case: e1 => <-; case: e2.
+rewrite -!addrA ![_ + (_ - _) == _](can2_eq (addKr _) (addNKr _)) !addNr !subr_eq0.
+by move=> /eqP [] <- /eqP [] ->.
 Qed.
 
-Definition Iquadrant_traj (g : grid) (w : seq step) : bool :=
-  all Iquadrant (trajectory g w).
-
+(* Properties of trajectories that start and stay in the north half plane *)
 Definition nhalf_traj (g : grid) (w : seq step) : bool :=
-  all nhalf (trajectory g w).
+  all nhalf (g :: (trajectory g w)).
 
-(* If g is in the north half plane and the trajectory along w from g stays in
-   the north half-plane, then for every prefix of w, the number of SE is smaller
-   than the number of N *)
-Lemma nhalf_traj_leSEN g w2 w1 : nhalf g -> nhalf_traj g (w1 ++ w2) ->
+Lemma nhalf_trajE g w : nhalf_traj g w = nhalf g && all nhalf (trajectory g w).
+Proof. by []. Qed.
+
+Lemma nhalf_traj_cat  g w1 w2 :
+  nhalf_traj g (w1 ++ w2) =
+  nhalf_traj g w1 && nhalf_traj (final_pos g w1) w2.
+Proof.
+rewrite [in LHS]/nhalf_traj trajectory_cat -cat_cons all_cat.
+apply: andb_id2l; rewrite nhalf_trajE; move/allP/(_ _ (trajectory_final _ _))->.
+done.
+Qed.
+
+(* If the trajectory along w from the origin stays in the north half-plane,
+  then the number of SE in w is smaller than the number of N *)
+Lemma nhalf_otraj_le w : nhalf_traj origin w ->
+  (count_SE w)%:Z <= (count_N w)%:Z.
+Proof.
+move/allP/(_ _ (trajectory_final _ _)); rewrite /nhalf ord_final add0r subr_ge0.
+done.
+Qed.
+
+(* If  the trajectory along w from the origin stays in the north half-plane,
+  then for every of its prefixes w' the number of SE in w' is smaller than
+  the number of N *)
+
+Lemma nhalf_otraj_pre w1 w2 : nhalf_traj origin (w1 ++ w2) ->
   (count_SE w1)%:Z <= (count_N w1)%:Z.
-Proof. Admitted.
+Proof. by rewrite nhalf_traj_cat; case/andP=> /nhalf_otraj_le. Qed.
+
+(* The analogue theory for trajectories staying in the east half plane.
+   Copy-paste mutatis mutandis. *)
+
+Definition ehalf_traj (g : grid) (w : seq step) : bool :=
+  all ehalf (g :: (trajectory g w)).
+
+Lemma ehalf_trajE g w :
+  ehalf_traj g w = ehalf g && all ehalf (trajectory g w).
+Proof. by []. Qed.
+
+Lemma ehalf_traj_cat  g w1 w2 :
+  ehalf_traj g (w1 ++ w2) =
+  ehalf_traj g w1 && ehalf_traj (final_pos g w1) w2.
+Proof.
+rewrite [in LHS]/ehalf_traj trajectory_cat -cat_cons all_cat.
+apply: andb_id2l; rewrite ehalf_trajE; move/allP/(_ _ (trajectory_final _ _))->.
+done.
+Qed.
+
+(* If  the trajectory along w from the origin stays in the east half-plane,
+  then the number of W in w is smaller than the number of SE *)
+Lemma ehalf_otraj_le w : ehalf_traj origin w ->
+  (count_W w)%:Z <= (count_SE w)%:Z.
+Proof.
+move/allP/(_ _ (trajectory_final _ _)); rewrite /ehalf abs_final add0r subr_ge0.
+done.
+Qed.
+
+(* If  the trajectory along w from the origin stays in the north half-plane,
+  then for every of its prefixes w' the number of W in w' is smaller than
+  the number of SE *)
+
+Lemma ehalf_otraj_pre w1 w2 : ehalf_traj origin (w1 ++ w2) ->
+  (count_W w1)%:Z <= (count_SE w1)%:Z.
+Proof. by rewrite ehalf_traj_cat; case/andP=> /ehalf_otraj_le. Qed.
+
+Definition Iquadrant_traj (g : grid) (w : seq step) : bool :=
+  all Iquadrant (g :: (trajectory g w)).
+
+Lemma Iquadrant_trajE g w :
+  Iquadrant_traj g w = Iquadrant g && all Iquadrant (trajectory g w).
+Proof. by []. Qed.
+
+Lemma Iquadrant_nhalf_traj g w : Iquadrant_traj g w -> nhalf_traj g w.
+Proof. by rewrite [Iquadrant_traj _ _]all_predI; case/andP. Qed.
+
+Lemma Iquadrant_ehalf_traj g w : Iquadrant_traj g w -> ehalf_traj g w.
+Proof. by rewrite [Iquadrant_traj _ _]all_predI; case/andP. Qed.
+
+Lemma Iquadrant_traj_cat  g w1 w2 :
+  Iquadrant_traj g (w1 ++ w2) =
+  Iquadrant_traj g w1 && Iquadrant_traj (final_pos g w1) w2.
+Proof.
+rewrite [in LHS]/Iquadrant_traj trajectory_cat -cat_cons all_cat.
+apply: andb_id2l => /allP/(_ _ (trajectory_final _ _)).
+by rewrite Iquadrant_trajE; move->.
+Qed.
+
+Lemma Iquadrant_otraj_le w : Iquadrant_traj origin w ->
+  (count_W w)%:Z <= (count_SE w)%:Z <= (count_N w).
+Proof.
+move=> itow; rewrite ehalf_otraj_le; last exact: Iquadrant_ehalf_traj.
+rewrite nhalf_otraj_le //; exact: Iquadrant_nhalf_traj.
+Qed.
+
+Lemma Iquadrant_otraj_pre w1 w2 : Iquadrant_traj origin (w1 ++ w2) ->
+  (count_W w1)%:Z <= (count_SE w1)%:Z <= (count_N w1).
+Proof.
+by rewrite Iquadrant_traj_cat; case/andP=> itow1 _; apply: Iquadrant_otraj_le.
+Qed.
 
 (* A sequence is an Asequence if its associated trajectory from the origin stays in
    the upper (north) half-plane and ends at the origin: *)
@@ -286,13 +404,36 @@ Proof. by move=> w /Aseq_oloop /loop_trajP; case=> _ ->. Qed.
 Lemma Aseq_count_NSE : {in Aseq, count_N =1 count_SE}.
 Proof. by move=> w Aw; rewrite /= Aseq_count_NW // Aseq_count_SEW. Qed.
 
+(* Any prefix of an Aseq has more N than SE: *)
+Lemma Aseq_pre w1 w2 : w1 ++ w2 \in Aseq ->
+  (count_SE w1)%:Z <= (count_N w1)%:Z.
+Proof. by move/Aseq_nhalf/nhalf_otraj_pre. Qed.
 
 (* A sequence is a B-seqeunce if its trajectory from the origin stays in
    quadrant I and ends somewhere on the diagonal: *)
 Definition Bseq (w : seq step) :=
   Iquadrant_traj origin w && to_diag_traj origin w.
 
+Lemma Bseq_Iquadrant w : w \in Bseq -> Iquadrant_traj origin w.
+Proof. by case/andP. Qed.
 
+Lemma Bseq_oto_diag w : w \in Bseq -> to_diag_traj origin w.
+Proof. by case/andP. Qed.
+
+(* A Bseq necessarily has less W than SE than N *)
+Lemma Bseq_count_le w : w \in Bseq ->
+   (count_W w)%:Z <= (count_SE w)%:Z <= (count_N w).
+Proof. by move/Bseq_Iquadrant/Iquadrant_otraj_le. Qed.
+
+Lemma Bseq_pre w1 w2 : w1 ++ w2 \in Bseq ->
+   (count_W w1)%:Z <= (count_SE w1)%:Z <= (count_N w1)%:Z.
+Proof. by move/Bseq_Iquadrant/Iquadrant_otraj_pre. Qed.
+
+(* Again we inherit from the tentative statement of
+   to_diagP, probably not in its most convenient form. *)
+Lemma Bseq_count w : w \in Bseq ->
+((count_SE w)%:Z - (count_W w)%:Z = (count_N w)%:Z - (count_SE w)%:Z).
+Proof. by move/Bseq_oto_diag/oto_diag_trajP. Qed.
 
 (* Now we have all the necessary vocabulary to describe the families of walks
    the exercise is about *)
