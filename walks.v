@@ -99,8 +99,11 @@ Canonical  grid_subCountType := Eval hnf in [subCountType of grid].
 Definition origin := Grid (0, 0).
 
 (* Abscissia and ordinate of a point of the grid *)
-Notation abs  := (fun g : grid => g.1).
-Notation ord  := (fun g : grid => g.2).
+Definition abs  := (fun g : grid => g.1).
+Definition ord  := (fun g : grid => g.2).
+
+Lemma grid_eq g1 g2 : (g1 == g2) = (abs g1 == abs g2) && (ord g1 == ord g2).
+Proof. by []. Qed.
 
 (* Several predicates describing zones of interest in the grid *)
 Definition diag (g : grid) : bool := abs g == ord g.
@@ -112,7 +115,7 @@ Definition nhalf (g : grid) : bool := 0 <= ord g.
 Definition shalf (g : grid) : bool := ord g <= 0.
 
 (* East (closed) half plane *)
-Definition ehalf (g : grid) : bool := abs g >= 0.
+Definition ehalf (g : grid) : bool := 0 <= abs g.
 
 (* West (closed) half plane *)
 Definition whalf (g : grid) : bool := abs g <= 0.
@@ -238,6 +241,24 @@ Lemma nth_trajectory g1 g2 w n : (n < size w)%N ->
    nth g1 (trajectory g2 w) n = final_pos g2 (take n.+1 w).
 Proof. by move=> ltnsw; rewrite nth_scanl. Qed.
 
+Lemma final_pos_take g w n :
+  final_pos g (take n.+1 w) = nth (final_pos g w) (trajectory g w) n.
+Proof.
+case: (ltnP n (size  w)) => hnsw; first by rewrite nth_scanl.
+rewrite take_oversize; last by apply: leq_trans hnsw _.
+by rewrite nth_default // size_trajectory.
+Qed.
+
+Lemma abs_nth_trajectory g1 g2 w n : (n < size w)%N ->
+  abs (nth g1 (trajectory g2 w) n) =
+  abs g2 + (count_SE (take n.+1 w))%:Z - (count_W (take n.+1 w))%:Z.
+Proof. by move=> ?; rewrite nth_trajectory // abs_final. Qed.
+
+Lemma ord_nth_trajectory g1 g2 w n : (n < size w)%N ->
+  ord (nth g1 (trajectory g2 w) n) =
+  ord g2 + (count_N (take n.+1 w))%:Z - (count_SE (take n.+1 w))%:Z.
+Proof. by move=> ?; rewrite nth_trajectory // ord_final. Qed.
+
 Lemma trajectory_final g w : final_pos g w \in g :: trajectory g w.
 Proof.
 case: w => [|s w]; first by rewrite /= mem_seq1.
@@ -273,11 +294,13 @@ Definition loop_traj (g : grid) (w : seq step) : bool := final_pos g w == g.
 Lemma loop_trajP (g : grid) (w : seq step) :
   reflect (count_N w = count_SE w /\ count_SE w = count_W w) (loop_traj g w).
 Proof.
+rewrite /loop_traj grid_eq.
 apply: (iffP andP); rewrite ord_final abs_final; case; last first.
   by move=> -> ->; rewrite !addrK.
 rewrite -!addrA ![_ + (_ - _) == _](can2_eq (addKr _) (addNKr _)) !addNr !subr_eq0.
 by move=> /eqP [] <- /eqP [] ->.
 Qed.
+
 
 (* Properties of trajectories that start and stay in the north half plane *)
 Definition nhalf_traj (g : grid) (w : seq step) : bool :=
@@ -308,9 +331,23 @@ Qed.
   then for every of its prefixes w' the number of SE in w' is smaller than
   the number of N *)
 
+
 Lemma nhalf_otraj_pre w1 w2 : nhalf_traj origin (w1 ++ w2) ->
   (count_SE w1)%:Z <= (count_N w1)%:Z.
 Proof. by rewrite nhalf_traj_cat; case/andP=> /nhalf_otraj_le. Qed.
+
+(* This is in fact characterizing trajectories from the origin that stay in
+   the north plane *)
+Lemma nhalf_otrajP w :
+  reflect (forall n, (count_SE (take n w))%:Z <= (count_N (take n w))%:Z)
+          (nhalf_traj origin w).
+Proof.
+apply: (iffP idP) => [ntw n| countle].
+  by move: ntw; rewrite -{1}[w](cat_take_drop n); move/nhalf_otraj_pre.
+rewrite nhalf_trajE /=; apply/(all_nthP origin) => i ltisw.
+rewrite /nhalf ord_nth_trajectory -?(size_trajectory origin) // subr_ge0.
+exact: countle.
+Qed.
 
 (* The analogue theory for trajectories staying in the east half plane.
    Copy-paste mutatis mutandis. *)
@@ -348,6 +385,19 @@ Lemma ehalf_otraj_pre w1 w2 : ehalf_traj origin (w1 ++ w2) ->
   (count_W w1)%:Z <= (count_SE w1)%:Z.
 Proof. by rewrite ehalf_traj_cat; case/andP=> /ehalf_otraj_le. Qed.
 
+(* This is in fact characterizing trajectories from the origin that stay in
+   the east plane *)
+Lemma ehalf_otrajP w :
+  reflect (forall n, (count_W (take n w))%:Z <= (count_SE (take n w))%:Z)
+          (ehalf_traj origin w).
+Proof.
+apply: (iffP idP) => [ntw n| countle].
+  by move: ntw; rewrite -{1}[w](cat_take_drop n); move/ehalf_otraj_pre.
+rewrite ehalf_trajE /=; apply/(all_nthP origin) => i ltisw.
+rewrite /ehalf abs_nth_trajectory -?(size_trajectory origin) // subr_ge0.
+exact: countle.
+Qed.
+
 Definition Iquadrant_traj (g : grid) (w : seq step) : bool :=
   all Iquadrant (g :: (trajectory g w)).
 
@@ -360,6 +410,10 @@ Proof. by rewrite [Iquadrant_traj _ _]all_predI; case/andP. Qed.
 
 Lemma Iquadrant_ehalf_traj g w : Iquadrant_traj g w -> ehalf_traj g w.
 Proof. by rewrite [Iquadrant_traj _ _]all_predI; case/andP. Qed.
+
+Lemma Iquadrant_nehalf_traj g w :
+  Iquadrant_traj g w = (nhalf_traj g w) && (ehalf_traj g w).
+Proof. by rewrite /Iquadrant_traj /Iquadrant all_predI. Qed.
 
 Lemma Iquadrant_traj_cat  g w1 w2 :
   Iquadrant_traj g (w1 ++ w2) =
@@ -378,10 +432,26 @@ rewrite nhalf_otraj_le //; exact: Iquadrant_nhalf_traj.
 Qed.
 
 Lemma Iquadrant_otraj_pre w1 w2 : Iquadrant_traj origin (w1 ++ w2) ->
-  (count_W w1)%:Z <= (count_SE w1)%:Z <= (count_N w1).
+  (count_W w1)%:Z <= (count_SE w1)%:Z <= (count_N w1)%:Z.
 Proof.
 by rewrite Iquadrant_traj_cat; case/andP=> itow1 _; apply: Iquadrant_otraj_le.
 Qed.
+
+Lemma Iquadrant_otrajP w :
+  reflect (forall n, (count_W (take n w))%:Z <= (count_SE (take n w))%:Z
+                                       <= (count_N (take n w))%:Z)
+          (Iquadrant_traj origin w).
+Proof.
+apply: (iffP idP) => [ntw n| countle].
+  move/Iquadrant_nhalf_traj: (ntw) => /nhalf_otrajP ->.
+  by move/Iquadrant_ehalf_traj: (ntw) => /ehalf_otrajP ->.
+rewrite Iquadrant_nehalf_traj.
+have /nhalf_otrajP -> :
+  forall n, (count_SE (take n w))%:Z <= (count_N (take n w))%:Z.
+  by move=> n; case/andP: (countle n).
+by apply/ehalf_otrajP=> n; case/andP: (countle n).
+Qed.
+
 
 (* A sequence is an Asequence if its associated trajectory from the origin stays in
    the upper (north) half-plane and ends at the origin: *)
@@ -409,6 +479,16 @@ Lemma Aseq_pre w1 w2 : w1 ++ w2 \in Aseq ->
   (count_SE w1)%:Z <= (count_N w1)%:Z.
 Proof. by move/Aseq_nhalf/nhalf_otraj_pre. Qed.
 
+Lemma AseqP w : reflect
+                [/\ forall n, (count_SE (take n w))%:Z <= (count_N (take n w))%:Z,
+                    count_N w = count_SE w & count_SE w = count_W w]
+                (Aseq w).
+Proof.
+apply: (iffP idP).
+  by rewrite /Aseq; case/andP => /nhalf_otrajP=> ? /loop_trajP; case.
+by rewrite /Aseq; case=> /nhalf_otrajP => -> /= he1 he2; apply/loop_trajP.
+Qed.
+
 (* A sequence is a B-seqeunce if its trajectory from the origin stays in
    quadrant I and ends somewhere on the diagonal: *)
 Definition Bseq (w : seq step) :=
@@ -422,7 +502,7 @@ Proof. by case/andP. Qed.
 
 (* A Bseq necessarily has less W than SE than N *)
 Lemma Bseq_count_le w : w \in Bseq ->
-   (count_W w)%:Z <= (count_SE w)%:Z <= (count_N w).
+   (count_W w)%:Z <= (count_SE w)%:Z <= (count_N w)%:Z.
 Proof. by move/Bseq_Iquadrant/Iquadrant_otraj_le. Qed.
 
 Lemma Bseq_pre w1 w2 : w1 ++ w2 \in Bseq ->
@@ -432,14 +512,32 @@ Proof. by move/Bseq_Iquadrant/Iquadrant_otraj_pre. Qed.
 (* Again we inherit from the tentative statement of
    to_diagP, probably not in its most convenient form. *)
 Lemma Bseq_count w : w \in Bseq ->
-((count_SE w)%:Z - (count_W w)%:Z = (count_N w)%:Z - (count_SE w)%:Z).
+  (count_SE w)%:Z - (count_W w)%:Z = (count_N w)%:Z - (count_SE w)%:Z.
 Proof. by move/Bseq_oto_diag/oto_diag_trajP. Qed.
+
+Lemma BseqP w : reflect
+                  ((forall n, (count_W (take n w))%:Z <= (count_SE (take n w))%:Z
+                                                      <= (count_N (take n w))%:Z)
+                  /\
+                    (count_SE w)%:Z - (count_W w)%:Z =
+                    (count_N w)%:Z - (count_SE w)%:Z)
+                  (Bseq w).
+Proof.
+apply: (iffP idP).
+  by rewrite /Bseq; case/andP => /Iquadrant_otrajP=> ? /oto_diag_trajP.
+by case=> /Iquadrant_otrajP iw /oto_diag_trajP odw; rewrite /Bseq iw.
+Qed.
+
+
+
+
 
 (* Now we have all the necessary vocabulary to describe the families of walks
    the exercise is about *)
 
 
 (* A (walk n) is (a wrapper around) a sequence of size n  *)
+
 Inductive walk (n : nat) := Walk of n.-tuple step.
 
 
@@ -473,6 +571,10 @@ Definition Bwalk (n : nat) (w : walk n) := Bseq w.
 
 (* And the conjecture is the following: *)
 (* Conjecture card_Awalks_Bwalks : forall n : nat, #|@Awalk n| = #|@Bwalk n|. *)
+
+(* Rmk : I would like n to be implicit in definitions Aseq and Bseq, but
+   I do not manage to overrid the flag set by my global options, even
+   with the Argument command. Is it possible? *)
 
 (*  OBSOLETE Some code, to test programming. *)
 (* Fixpoint naiveA2B (w : seq step) : seq step := *)
