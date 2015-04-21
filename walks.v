@@ -487,7 +487,7 @@ apply: (iffP idP).
 by rewrite /Aseq; case=> /nhalf_otrajP => -> /= he1 he2; apply/loop_trajP.
 Qed.
 
-(* A sequence is a B-seqeunce if its trajectory from the origin stays in
+(* A sequence is a B-sequence if its trajectory from the origin stays in
    quadrant I and ends somewhere on the diagonal: *)
 Definition Bseq (w : seq step) :=
   Iquadrant_traj origin w && to_diag_traj origin w.
@@ -527,6 +527,7 @@ by case=> /Iquadrant_otrajP iw /oto_diag_trajP odw; rewrite /Bseq iw.
 Qed.
 
 (* A state monad for datas of type A equipped with two counters *)
+
 Definition cmpt2 := (nat * nat)%type.
 
 Record store (A : Type) : Type := Store {res : A; c : cmpt2}.
@@ -553,15 +554,15 @@ Proof. by move=> c; rewrite /sbind; case: (x c). Qed.
 
 (* A convenient notation for programming in monadic style, borrowed to Cyril :) *)
 
-Notation "'sbind' x <- y ; z" :=
+Notation "'sdo' x <- y ; z" :=
   (sbind y (fun x => z)) (at level 99, x at level 0, y at level 0,
-    format "'[hv' 'sbind'  x  <-  y ;  '/' z ']'").
+    format "'[hv' 'sdo'  x  <-  y ;  '/' z ']'").
 
 (* A monadic version of scanl, properties to be proved *)
 Fixpoint sscanl {A B} (f : A -> state B) (wl : seq A) : state (seq B) :=
   if wl is sa :: l then
-    sbind l1 <- sscanl f l;
-    sbind s1 <- f sa;
+    sdo l1 <- sscanl f l;
+    sdo s1 <- f sa;
     sreturn (s1 :: l1)
  else sreturn [::].
 
@@ -583,25 +584,24 @@ Arguments sA2B s c : simpl never.
 
 Definition sB2A (s : step) : state step := fun c =>
   match s, c with
-    | N, (0, c2)         => mkStore W 0 c2
-    | SE, (c1, c2.+1)    => mkStore W c1.+1 c2
-    | N, (c1.+1, c2)    => mkStore N c1 c2
-    | W, (c1, c2)      => mkStore SE c1 c2.+1
-    | SE, (c1, 0)        => mkStore SE c1.+1 0
+    | N, (0, c2)      => mkStore W 0 c2
+    | SE, (c1, c2.+1) => mkStore W c1.+1 c2
+    | N, (c1.+1, c2)  => mkStore N c1 c2
+    | W, (c1, c2)     => mkStore SE c1 c2.+1
+    | SE, (c1, 0)     => mkStore SE c1.+1 0
   end.
 
 Arguments sB2A s c : simpl never.
 
+Lemma readA2BK (s : step) (c : cmpt2) :
+  [|| (c.1 != 0%N), (c.2 != 0%N) | (s != SE)] ->
+  sbind (sB2A s) sA2B c = Store s c.
+Proof. by case: s; case: c => [] [| n1] [|n2]. Qed.
+
 (* Now we can implement both transformations *)
-Definition readA2B (sl : state (seq step)) : state (seq step) :=
-  sbind l <- sl; sscanl sA2B l.
+Definition readA2B (l : seq step) : state (seq step) := sscanl sA2B l.
 
-Definition readB2A  (sl : state (seq step)) : state (seq step) :=
-  sbind l <- sl; sscanl sB2A l.
-
-
-
-
+Definition readB2A (l : seq step) : state (seq step) := sscanl sB2A l.
 
 
 (* Definition counters_at_0 (s : store step) := (cnse s == 0%N) && (cnsew s == 0%N). *)
