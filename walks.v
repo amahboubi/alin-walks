@@ -16,7 +16,6 @@ three elements. *)
 
 Inductive step : Type := N | W | SE.
 
-
 (* Installing  structures of equality, countable, choice,
    finite type on type step, plus a coercion from step to finite ordinals. We proceed
    by showing that ord_of_step : step -> 'I_3 has a left inverse, where I_3 is the
@@ -64,7 +63,7 @@ Definition count_SE : seq step -> nat := count is_SE.
 Lemma count_steps_size (w : seq step) :
   count_N w + count_W w + count_SE w = size w.
 Proof.
-elim: w => // [[]] l /= <-; rewrite !add0n.
+elim: w => // [[]] l /= <-. rewrite !add0n.
 - by rewrite -[RHS]add1n !addnA.
 - by rewrite [_ + (1 + _)]addnCA -!addnA add1n.
 - by rewrite [_ + (1 + _)]addnCA add1n.
@@ -120,18 +119,18 @@ Definition ehalf (g : grid) : bool := 0 <= abs g.
 (* West (closed) half plane *)
 Definition whalf (g : grid) : bool := abs g <= 0.
 
-(* Quandrant I *)
+(* Quadrant I *)
 Definition Iquadrant := predI nhalf ehalf.
 
 Arguments Iquadrant : simpl never.
 
-(* (* Quandrant II *) *)
+(* (* Quadrant II *) *)
 (* Definition IIquadrant : bool := predI nhalf whalf. *)
 
-(* (* Quandrant III *) *)
+(* (* Quadrant III *) *)
 (* Definition IIIquadrant : bool := predI shalf whalf. *)
 
-(* (* Quandrant IV *) *)
+(* (* Quadrant IV *) *)
 (* Definition IVquadrant : bool := predI shalf ehalf. *)
 
 
@@ -321,7 +320,7 @@ Qed.
 (* If the trajectory along w from the origin stays in the north half-plane,
   then the number of SE in w is smaller than the number of N *)
 Lemma nhalf_otraj_le w : nhalf_traj origin w ->
-  (count_SE w)%:Z <= (count_N w)%:Z.
+  (count_SE w <= count_N w)%N.
 Proof.
 move/allP/(_ _ (trajectory_final _ _)); rewrite /nhalf ord_final add0r subr_ge0.
 done.
@@ -333,13 +332,13 @@ Qed.
 
 
 Lemma nhalf_otraj_pre w1 w2 : nhalf_traj origin (w1 ++ w2) ->
-  (count_SE w1)%:Z <= (count_N w1)%:Z.
+  (count_SE w1 <= count_N w1)%N.
 Proof. by rewrite nhalf_traj_cat; case/andP=> /nhalf_otraj_le. Qed.
 
 (* This is in fact characterizing trajectories from the origin that stay in
    the north plane *)
 Lemma nhalf_otrajP w :
-  reflect (forall n, (count_SE (take n w))%:Z <= (count_N (take n w))%:Z)
+  reflect (forall n, count_SE (take n w) <= count_N (take n w))%N
           (nhalf_traj origin w).
 Proof.
 apply: (iffP idP) => [ntw n| countle].
@@ -370,8 +369,7 @@ Qed.
 
 (* If  the trajectory along w from the origin stays in the east half-plane,
   then the number of W in w is smaller than the number of SE *)
-Lemma ehalf_otraj_le w : ehalf_traj origin w ->
-  (count_W w)%:Z <= (count_SE w)%:Z.
+Lemma ehalf_otraj_le w : ehalf_traj origin w -> (count_W w <= count_SE w)%N.
 Proof.
 move/allP/(_ _ (trajectory_final _ _)); rewrite /ehalf abs_final add0r subr_ge0.
 done.
@@ -382,13 +380,13 @@ Qed.
   the number of SE *)
 
 Lemma ehalf_otraj_pre w1 w2 : ehalf_traj origin (w1 ++ w2) ->
-  (count_W w1)%:Z <= (count_SE w1)%:Z.
+  (count_W w1 <= count_SE w1)%N.
 Proof. by rewrite ehalf_traj_cat; case/andP=> /ehalf_otraj_le. Qed.
 
 (* This is in fact characterizing trajectories from the origin that stay in
    the east plane *)
 Lemma ehalf_otrajP w :
-  reflect (forall n, (count_W (take n w))%:Z <= (count_SE (take n w))%:Z)
+  reflect (forall n, count_W (take n w) <= count_SE (take n w))%N
           (ehalf_traj origin w).
 Proof.
 apply: (iffP idP) => [ntw n| countle].
@@ -425,21 +423,21 @@ by rewrite Iquadrant_trajE; move->.
 Qed.
 
 Lemma Iquadrant_otraj_le w : Iquadrant_traj origin w ->
-  (count_W w)%:Z <= (count_SE w)%:Z <= (count_N w).
+  (count_W w <= count_SE w <= count_N w)%N.
 Proof.
 move=> itow; rewrite ehalf_otraj_le; last exact: Iquadrant_ehalf_traj.
 rewrite nhalf_otraj_le //; exact: Iquadrant_nhalf_traj.
 Qed.
 
 Lemma Iquadrant_otraj_pre w1 w2 : Iquadrant_traj origin (w1 ++ w2) ->
-  (count_W w1)%:Z <= (count_SE w1)%:Z <= (count_N w1)%:Z.
+  (count_W w1 <= count_SE w1 <= count_N w1)%N.
 Proof.
 by rewrite Iquadrant_traj_cat; case/andP=> itow1 _; apply: Iquadrant_otraj_le.
 Qed.
 
 Lemma Iquadrant_otrajP w :
-  reflect (forall n, (count_W (take n w))%:Z <= (count_SE (take n w))%:Z
-                                       <= (count_N (take n w))%:Z)
+  reflect (forall n, count_W (take n w) <= count_SE (take n w)
+                                       <= count_N (take n w))%N
           (Iquadrant_traj origin w).
 Proof.
 apply: (iffP idP) => [ntw n| countle].
@@ -528,6 +526,151 @@ apply: (iffP idP).
 by case=> /Iquadrant_otrajP iw /oto_diag_trajP odw; rewrite /Bseq iw.
 Qed.
 
+(* A state monad for datas of type A equipped with two counters *)
+Definition cmpt2 := (nat * nat)%type.
+
+Record store (A : Type) : Type := Store {res : A; c : cmpt2}.
+
+Definition mkStore {A} a n1 n2 : store A := Store a (n1, n2).
+
+Definition state (A : Type) :=  cmpt2 -> store A.
+
+Definition sreturn {A} (a : A) : state A := fun c => Store a c.
+
+Definition sbind {A B} (sa : state A) (f : A -> state B) : state B :=
+  fun x => let: Store a c := sa x in f a c.
+
+Lemma sbind_return {A B} (x : A) (f : A -> state B) : sbind (sreturn x) f = f x.
+Proof. by []. Qed.
+
+Lemma sreturn_bind {A} (x : state A) : sbind x sreturn =1 x.
+Proof. by move=> c; rewrite /sbind; case: (x c). Qed.
+
+Lemma sbind_comp {A B C} (f : A -> state B) (g : B -> state C) (x : state A) :
+    sbind (sbind x f) g =1 sbind x (fun x => (sbind (f x) g)).
+Proof. by move=> c; rewrite /sbind; case: (x c). Qed.
+
+
+(* A convenient notation for programming in monadic style, borrowed to Cyril :) *)
+
+Notation "'sbind' x <- y ; z" :=
+  (sbind y (fun x => z)) (at level 99, x at level 0, y at level 0,
+    format "'[hv' 'sbind'  x  <-  y ;  '/' z ']'").
+
+(* A monadic version of scanl, properties to be proved *)
+Fixpoint sscanl {A B} (f : A -> state B) (wl : seq A) : state (seq B) :=
+  if wl is sa :: l then
+    sbind l1 <- sscanl f l;
+    sbind s1 <- f sa;
+    sreturn (s1 :: l1)
+ else sreturn [::].
+
+
+(* State transformation from game A to game B *)
+Definition sA2B (s : step) : state step := fun c =>
+  match s, c with
+    |  W, (0, c2)      =>  mkStore N 0 c2
+    |  W, (c1.+1, c2)  =>  mkStore SE c1 c2.+1
+    |  N, (c1, c2)     =>  mkStore N c1.+1 c2
+    |  SE, (c1, c2.+1) =>  mkStore W c1 c2
+    |  SE, (c1.+1, 0)  =>  mkStore SE c1 0
+    |  SE, (0, 0)      =>  mkStore N 0 0
+  end.
+
+Arguments sA2B s c : simpl never.
+
+(* State transformation from game B to game A *)
+
+Definition sB2A (s : step) : state step := fun c =>
+  match s, c with
+    | N, (0, c2)         => mkStore W 0 c2
+    | SE, (c1, c2.+1)    => mkStore W c1.+1 c2
+    | N, (c1.+1, c2)    => mkStore N c1 c2
+    | W, (c1, c2)      => mkStore SE c1 c2.+1
+    | SE, (c1, 0)        => mkStore SE c1.+1 0
+  end.
+
+Arguments sB2A s c : simpl never.
+
+(* Now we can implement both transformations *)
+Definition readA2B (sl : state (seq step)) : state (seq step) :=
+  sbind l <- sl; sscanl sA2B l.
+
+Definition readB2A  (sl : state (seq step)) : state (seq step) :=
+  sbind l <- sl; sscanl sB2A l.
+
+
+
+
+
+
+(* Definition counters_at_0 (s : store step) := (cnse s == 0%N) && (cnsew s == 0%N). *)
+
+(* Definition Nstore (s : store step) := res s == N. *)
+
+(* Definition SEstore (s : store step) := res s == SE. *)
+
+(* Definition Wstore (s : store step) := res s == W. *)
+
+(* Definition valid_Astart := predU (predC counters_at_0) (predC SEstore). *)
+
+(* Lemma mem_validAstart s : *)
+(*   s \in valid_Astart = [|| (cnse s != 0%N), (cnsew s != 0%N) | (res s != SE)]. *)
+(* Proof. by rewrite inE /= /counters_at_0 negb_and !orbA. Qed. *)
+
+(* Lemma sA2BK : {in valid_Astart, cancel (sA2B (sB2A s)}. *)
+(* Proof. by case=> [[]] [|c1] [|c2]; rewrite mem_validAstart; case/or3P. Qed. *)
+
+
+(* Definition stepA2B (s : state step) : state step := *)
+(*   match s with *)
+(*     | State W 0 c2      => State N 0 c2 *)
+(*     | State W c1.+1 c2  => State SE c1 c2.+1 *)
+(*     | State N c1 c2     => State N c1.+1 c2 *)
+(*     | State SE c1 c2.+1 => State W c1 c2 *)
+(*     | State SE c1.+1 0  => State SE c1 0 *)
+(*     | State SE 0 0      => State N 0 0 *)
+(*   end. *)
+
+(* Arguments stepA2B s : simpl never. *)
+
+(* Definition stepB2A (s : state step) : state step := *)
+(*   match s with *)
+(*     | State N 0 c2         => State W 0 c2 *)
+(*     | State SE c1 c2.+1    => State W c1.+1 c2 *)
+(*     | State N c1.+1 c2    => State N c1 c2 *)
+(*     | State W c1 c2      => State SE c1 c2.+1 *)
+(*     | State SE c1 0        => State SE c1.+1 0 *)
+(*   end. *)
+
+(* Arguments stepB2A s : simpl never. *)
+
+(* Definition counters_at_0 (s : state step) := (cnse s == 0%N) && (cnsew s == 0%N). *)
+
+(* Definition Nstate (s : state step) := res s == N. *)
+
+(* Definition SEstate (s : state step) := res s == SE. *)
+
+(* Definition Wstate (s : state step) := res s == W. *)
+
+(* Definition valid_Astart := predU (predC counters_at_0) (predC SEstate). *)
+
+(* Lemma mem_validAstart s : *)
+(*   s \in valid_Astart = [|| (cnse s != 0%N), (cnsew s != 0%N) | (res s != SE)]. *)
+(* Proof. by rewrite inE /= /counters_at_0 negb_and !orbA. Qed. *)
+
+(* Lemma stepA2BK : {in valid_Astart, cancel stepA2B stepB2A}. *)
+(* Proof. by case=> [[]] [|c1] [|c2]; rewrite mem_validAstart; case/or3P. Qed. *)
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -575,24 +718,3 @@ Definition Bwalk (n : nat) (w : walk n) := Bseq w.
 (* Rmk : I would like n to be implicit in definitions Aseq and Bseq, but
    I do not manage to overrid the flag set by my global options, even
    with the Argument command. Is it possible? *)
-
-(*  OBSOLETE Some code, to test programming. *)
-(* Fixpoint naiveA2B (w : seq step) : seq step := *)
-(*   match w with *)
-(*     |[::] => [::] *)
-(*     |s :: w' => if (is_W s) && (count_W w' < count_ w')%N *)
-(*                  then s :: (naiveA2B w') *)
-(*                  else north :: (naiveA2B w') *)
-(*   end. *)
-
-
-(* Fixpoint naiveB2A (w : seq step) : seq step := *)
-(*   match w with *)
-(*     |[::] => [::] *)
-(*     |s :: w' => if (is_north s) && ((count_north w) > (count_west w))%N *)
-(*                 then west :: (naiveB2A w') *)
-(*                 else s :: (naiveB2A w') *)
-(*   end. *)
-
-(* Lemma test : {in Bseq, cancel naiveB2A naiveA2B}. *)
-(* Proof. Admitted. *)
