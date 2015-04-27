@@ -526,11 +526,62 @@ apply: (iffP idP).
 by case=> /Iquadrant_otrajP iw /oto_diag_trajP odw; rewrite /Bseq iw.
 Qed.
 
+
+(* Dyck words, as sequences of booleans, where false is the opening parenthesis
+   and true is the closing one *)
+
+Fixpoint dyck_c (l : seq bool) (c : nat) : bool :=
+  match l with
+    | [::] => c == 0%N
+    | s :: l' => if (~~ s) then dyck_c l' c.+1
+                else if c is c'.+1 then dyck_c l' c' else false
+  end.
+
+Definition dyck l := dyck_c l 0%N.
+
+Lemma dyck_cP c l :
+  reflect ((forall n, (count_mem true (take n l) <= c + count_mem false (take n l))%N) /\
+          (c + count_mem false l = count_mem true l)%N) (dyck_c l c).
+Proof.
+apply: (iffP idP).
+  elim: l c => [|b l ihl] c //; first by move/eqP->.
+  case: b; last first.
+  - by move/ihl => [? hl]; split => [[|n] //|]; rewrite /= add0n addnA addn1 ?hl.
+  - case: c => [|c] // /ihl => [] [hl1 hl2]; split => [[|n]|] //=; rewrite add0n.
+    + rewrite !addSn add0n ltnS; exact: leq_trans (hl1 _) _.
+    + by rewrite !addSn add0n hl2.
+elim: l c => [ /= |b l ihl] c; first by rewrite addn0; case => _ ->.
+case: b; last first.
+  case=> h1 h2; apply: ihl; split; last by rewrite -[RHS]h2 /= addnA addn1.
+  case=> [|n] /=; first by rewrite take0 /= addn0.
+  by apply: leq_trans (h1 n.+2) _; rewrite /= addnA addn1.
+case: c => [|c] [h1 h2] /=; first by move: (h1 1%N); rewrite /= take0 !addn0.
+apply: ihl; split; last by move: h2; rewrite /= add0n add1n addSn; case.
+by move=> n; move: (h1 n.+1); rewrite /= add0n add1n addSn.
+Qed.
+
+Lemma dyckP l :
+  reflect ((forall n, (count_mem true (take n l) <= count_mem false (take n l))%N) /\
+           (count_mem false l = count_mem true l)) (dyck l).
+Proof. by apply: (iffP (dyck_cP _ _)). Qed.
+
+
+
+
+
 (* A state monad for datas of type A equipped with two counters *)
 
 Definition cmpt2 := (nat * nat)%type.
 
-Record store (A : Type) : Type := Store {res : A; c : cmpt2}.
+(* The intuition is to represent the word transformations using automatons,
+   with steps labelled with pairs of natural numbers and transitions labelled
+   with 'step' letters. *)
+
+Section StateMonadDefs.
+
+Context {A B C : Type}.
+
+Record store (A : Type) : Type := Store {data : A; ct : cmpt2}.
 
 Definition mkStore {A} a n1 n2 : store A := Store a (n1, n2).
 
@@ -541,33 +592,82 @@ Definition sreturn {A} (a : A) : state A := fun c => Store a c.
 Definition sbind {A B} (sa : state A) (f : A -> state B) : state B :=
   fun x => let: Store a c := sa x in f a c.
 
-Lemma sbind_return {A B} (x : A) (f : A -> state B) : sbind (sreturn x) f = f x.
-Proof. by []. Qed.
-
-Lemma sreturn_bind {A} (x : state A) : sbind x sreturn =1 x.
-Proof. by move=> c; rewrite /sbind; case: (x c). Qed.
-
-Lemma sbind_comp {A B C} (f : A -> state B) (g : B -> state C) (x : state A) :
-    sbind (sbind x f) g =1 sbind x (fun x => (sbind (f x) g)).
-Proof. by move=> c; rewrite /sbind; case: (x c). Qed.
-
-
 (* A convenient notation for programming in monadic style, borrowed to Cyril :) *)
-
 Notation "'sdo' x <- y ; z" :=
   (sbind y (fun x => z)) (at level 99, x at level 0, y at level 0,
     format "'[hv' 'sdo'  x  <-  y ;  '/' z ']'").
 
-(* A monadic version of scanl, properties to be proved *)
-Fixpoint sscanl {A B} (f : A -> state B) (wl : seq A) : state (seq B) :=
-  if wl is sa :: l then
-    sdo l1 <- sscanl f l;
-    sdo s1 <- f sa;
+Lemma sbind_return (x : A) (f : A -> state B) :
+  (sdo y <- (sreturn x); f y) = f x.
+Proof. by []. Qed.
+
+Lemma sreturn_bind (x : state A) : (sdo a <- x; sreturn a) =1 x.
+Proof. by move=> c; rewrite /sbind; case: (x c). Qed.
+
+Lemma sbind_comp (f : A -> state B) (g : B -> state C) (x : state A) :
+(sdo b <- (sdo a <- x; f a); g b) =1 (sdo a <- x; sdo b <- (f a); g b).
+Proof. by move=> c; rewrite /sbind; case: (x c). Qed.
+
+Definition srev (sl : state (seq A)) := sdo l <- sl; sreturn (rev l).
+
+Lemma data_srev sl c : data (srev sl c) = rev (data (sl c)).
+Proof. by rewrite /srev /= /sbind; case: (sl c). Qed.
+
+Lemma ct_srev sl c : ct (srev sl c) = ct (sl c).
+Proof. by rewrite /srev /= /sbind; case: (sl c). Qed.
+
+Fixpoint spipe (f : A -> state B) (l : seq A) : state (seq B) :=
+  if l is a :: l then
+    sdo s1 <- f a;
+    sdo l1 <- spipe f l;
     sreturn (s1 :: l1)
  else sreturn [::].
 
+Lemma data_spipe_cons f s l c :
+  data (spipe f (s :: l) c) =
+  data (f s c) :: data (spipe f l (ct (f s c))).
+Proof.
+by rewrite /sbind /= /sbind; case: (f s c) => d1 c1 /=; case: (spipe f l c1).
+Qed.
 
-(* State transformation from game A to game B *)
+
+Lemma ct_spipe_cons f s l c :
+  ct (spipe f (s :: l) c) = ct (spipe f l (ct (f s c))).
+Proof.
+by rewrite /sbind /= /sbind; case: (f s c) => d1 c1 /=; case: (spipe f l c1).
+Qed.
+
+Lemma data_spipe_cat f l1 l2 c :
+  data (spipe f (cat l1 l2) c) =
+  (data (spipe f l1 c)) ++ (data (spipe f l2 (ct (spipe f l1 c)))).
+Proof.
+elim: l1 l2 c => [| s l1 ihl1 l2 c] //; rewrite cat_cons [LHS]data_spipe_cons.
+by rewrite ihl1 data_spipe_cons ct_spipe_cons cat_cons.
+Qed.
+
+Lemma data_spipe_rcons f s l c :
+  data (spipe f (rcons l s) c) =
+  rcons (data (spipe f l c)) (data (f s (ct (spipe f l c)))).
+Proof. by rewrite -cats1 data_spipe_cat -cats1 data_spipe_cons. Qed.
+
+Lemma ct_spipe_cat f l1 l2 c :
+  ct (spipe f (l1 ++ l2) c) = ct (spipe f l2 (ct (spipe f l1 c))).
+Proof.
+elim: l1 l2 c => [| s l1 ihl1 l2 c] //; rewrite cat_cons [LHS]ct_spipe_cons.
+by rewrite ihl1 ct_spipe_cons.
+Qed.
+
+Lemma ct_spipe_rcons f s l c :
+  ct (spipe f (rcons l s) c) = ct (f s (ct (spipe f l c))).
+Proof. by rewrite -cats1 ct_spipe_cat ct_spipe_cons. Qed.
+
+End StateMonadDefs.
+
+Notation "'sdo' x <- y ; z" :=
+
+  (sbind y (fun x => z)) (at level 99, x at level 0, y at level 0,
+    format "'[hv' 'sdo'  x  <-  y ;  '/' z ']'").
+
 Definition sA2B (s : step) : state step := fun c =>
   match s, c with
     |  W, (0, c2)      =>  mkStore N 0 c2
@@ -575,12 +675,10 @@ Definition sA2B (s : step) : state step := fun c =>
     |  N, (c1, c2)     =>  mkStore N c1.+1 c2
     |  SE, (c1, c2.+1) =>  mkStore W c1 c2
     |  SE, (c1.+1, 0)  =>  mkStore SE c1 0
-    |  SE, (0, 0)      =>  mkStore N 0 0
+    |  SE, (0, 0)      =>  mkStore N 0 0 (* junk *)
   end.
 
 Arguments sA2B s c : simpl never.
-
-(* State transformation from game B to game A *)
 
 Definition sB2A (s : step) : state step := fun c =>
   match s, c with
@@ -593,77 +691,49 @@ Definition sB2A (s : step) : state step := fun c =>
 
 Arguments sB2A s c : simpl never.
 
-Lemma readA2BK (s : step) (c : cmpt2) :
+Lemma sA2BK (s : step) (c : cmpt2) :
   [|| (c.1 != 0%N), (c.2 != 0%N) | (s != SE)] ->
-  sbind (sB2A s) sA2B c = Store s c.
+  (sdo x <- (sB2A s); sA2B x) c = sreturn s c.
 Proof. by case: s; case: c => [] [| n1] [|n2]. Qed.
 
-(* Now we can implement both transformations *)
-Definition readA2B (l : seq step) : state (seq step) := sscanl sA2B l.
+Definition stateA2B : seq step -> state (seq step) := srev \o (spipe sA2B).
 
-Definition readB2A (l : seq step) : state (seq step) := sscanl sB2A l.
+Lemma data_stateA2B_cons s l c :
+ data (stateA2B (s :: l) c) =
+ rcons (data (stateA2B l (ct (sA2B s c)))) (data (sA2B s c)).
+Proof.
+by rewrite /stateA2B data_srev data_spipe_cons rev_cons data_srev.
+Qed.
 
+Lemma data_stateA2B_rcons s l c :
+ data (stateA2B (rcons l s) c) =
+ (data (sA2B s (ct (stateA2B l c)))) :: data (stateA2B l c).
+Proof.
+by rewrite /stateA2B data_srev data_spipe_rcons rev_rcons data_srev ct_srev.
+Qed.
 
-(* Definition counters_at_0 (s : store step) := (cnse s == 0%N) && (cnsew s == 0%N). *)
+Lemma ct_stateA2B_cons s l c :
+ ct (stateA2B (s :: l) c) = ct (stateA2B l (ct (sA2B s c))).
+Proof. by rewrite /stateA2B ct_srev ct_spipe_cons ct_srev. Qed.
 
-(* Definition Nstore (s : store step) := res s == N. *)
+Lemma ct_stateA2B_rcons s l c :
+ ct (stateA2B (rcons l s) c) = ct (sA2B s (ct (spipe sA2B l c))).
+Proof. by rewrite /stateA2B !ct_srev ct_spipe_rcons. Qed.
 
-(* Definition SEstore (s : store step) := res s == SE. *)
+Definition seqA2B l := data (stateA2B l (0, 0)%N).
 
-(* Definition Wstore (s : store step) := res s == W. *)
+Lemma seqA2BP l : l \in Aseq -> seqA2B l \in Bseq.
+Admitted.
 
-(* Definition valid_Astart := predU (predC counters_at_0) (predC SEstore). *)
-
-(* Lemma mem_validAstart s : *)
-(*   s \in valid_Astart = [|| (cnse s != 0%N), (cnsew s != 0%N) | (res s != SE)]. *)
-(* Proof. by rewrite inE /= /counters_at_0 negb_and !orbA. Qed. *)
-
-(* Lemma sA2BK : {in valid_Astart, cancel (sA2B (sB2A s)}. *)
-(* Proof. by case=> [[]] [|c1] [|c2]; rewrite mem_validAstart; case/or3P. Qed. *)
-
-
-(* Definition stepA2B (s : state step) : state step := *)
-(*   match s with *)
-(*     | State W 0 c2      => State N 0 c2 *)
-(*     | State W c1.+1 c2  => State SE c1 c2.+1 *)
-(*     | State N c1 c2     => State N c1.+1 c2 *)
-(*     | State SE c1 c2.+1 => State W c1 c2 *)
-(*     | State SE c1.+1 0  => State SE c1 0 *)
-(*     | State SE 0 0      => State N 0 0 *)
-(*   end. *)
-
-(* Arguments stepA2B s : simpl never. *)
-
-(* Definition stepB2A (s : state step) : state step := *)
-(*   match s with *)
-(*     | State N 0 c2         => State W 0 c2 *)
-(*     | State SE c1 c2.+1    => State W c1.+1 c2 *)
-(*     | State N c1.+1 c2    => State N c1 c2 *)
-(*     | State W c1 c2      => State SE c1 c2.+1 *)
-(*     | State SE c1 0        => State SE c1.+1 0 *)
-(*   end. *)
-
-(* Arguments stepB2A s : simpl never. *)
-
-(* Definition counters_at_0 (s : state step) := (cnse s == 0%N) && (cnsew s == 0%N). *)
-
-(* Definition Nstate (s : state step) := res s == N. *)
-
-(* Definition SEstate (s : state step) := res s == SE. *)
-
-(* Definition Wstate (s : state step) := res s == W. *)
-
-(* Definition valid_Astart := predU (predC counters_at_0) (predC SEstate). *)
-
-(* Lemma mem_validAstart s : *)
-(*   s \in valid_Astart = [|| (cnse s != 0%N), (cnsew s != 0%N) | (res s != SE)]. *)
-(* Proof. by rewrite inE /= /counters_at_0 negb_and !orbA. Qed. *)
-
-(* Lemma stepA2BK : {in valid_Astart, cancel stepA2B stepB2A}. *)
-(* Proof. by case=> [[]] [|c1] [|c2]; rewrite mem_validAstart; case/or3P. Qed. *)
+Search _ card in fintype.
+Search _ injective cancel.
 
 
+Definition readB2A : seq step -> state (seq step) := spipe sB2A.
 
+Lemma whatWeWant l : l \in Aseq ->
+  (sdo x <- (srev (readA2B l)); readB2A x) (0, 0)%N = sreturn (rev l) (0, 0)%N.
+Admitted.
 
 
 
