@@ -60,8 +60,13 @@ Definition count_N : seq step -> nat := count is_N.
 Definition count_W : seq step -> nat := count is_W.
 Definition count_SE : seq step -> nat := count is_SE.
 
+Notation "#SE" := count_SE.
+Notation "#N" := count_N.
+Notation "#W" := count_W.
+
+
 Lemma count_steps_size (w : seq step) :
-  count_N w + count_W w + count_SE w = size w.
+  (#N w) + (#W w) + (#SE w) = size w.
 Proof.
 elim: w => // [[]] l /= <-. rewrite !add0n.
 - by rewrite -[RHS]add1n !addnA.
@@ -526,49 +531,6 @@ apply: (iffP idP).
 by case=> /Iquadrant_otrajP iw /oto_diag_trajP odw; rewrite /Bseq iw.
 Qed.
 
-
-(* Dyck words, as sequences of booleans, where false is the opening parenthesis
-   and true is the closing one *)
-
-Fixpoint dyck_c (l : seq bool) (c : nat) : bool :=
-  match l with
-    | [::] => c == 0%N
-    | s :: l' => if (~~ s) then dyck_c l' c.+1
-                else if c is c'.+1 then dyck_c l' c' else false
-  end.
-
-Definition dyck l := dyck_c l 0%N.
-
-Lemma dyck_cP c l :
-  reflect ((forall n, (count_mem true (take n l) <= c + count_mem false (take n l))%N) /\
-          (c + count_mem false l = count_mem true l)%N) (dyck_c l c).
-Proof.
-apply: (iffP idP).
-  elim: l c => [|b l ihl] c //; first by move/eqP->.
-  case: b; last first.
-  - by move/ihl => [? hl]; split => [[|n] //|]; rewrite /= add0n addnA addn1 ?hl.
-  - case: c => [|c] // /ihl => [] [hl1 hl2]; split => [[|n]|] //=; rewrite add0n.
-    + rewrite !addSn add0n ltnS; exact: leq_trans (hl1 _) _.
-    + by rewrite !addSn add0n hl2.
-elim: l c => [ /= |b l ihl] c; first by rewrite addn0; case => _ ->.
-case: b; last first.
-  case=> h1 h2; apply: ihl; split; last by rewrite -[RHS]h2 /= addnA addn1.
-  case=> [|n] /=; first by rewrite take0 /= addn0.
-  by apply: leq_trans (h1 n.+2) _; rewrite /= addnA addn1.
-case: c => [|c] [h1 h2] /=; first by move: (h1 1%N); rewrite /= take0 !addn0.
-apply: ihl; split; last by move: h2; rewrite /= add0n add1n addSn; case.
-by move=> n; move: (h1 n.+1); rewrite /= add0n add1n addSn.
-Qed.
-
-Lemma dyckP l :
-  reflect ((forall n, (count_mem true (take n l) <= count_mem false (take n l))%N) /\
-           (count_mem false l = count_mem true l)) (dyck l).
-Proof. by apply: (iffP (dyck_cP _ _)). Qed.
-
-
-
-
-
 (* A state monad for datas of type A equipped with two counters *)
 
 Definition cmpt2 := (nat * nat)%type.
@@ -576,6 +538,7 @@ Definition cmpt2 := (nat * nat)%type.
 (* The intuition is to represent the word transformations using automatons,
    with steps labelled with pairs of natural numbers and transitions labelled
    with 'step' letters. *)
+
 
 Section StateMonadDefs.
 
@@ -592,21 +555,22 @@ Definition sreturn {A} (a : A) : state A := fun c => Store a c.
 Definition sbind {A B} (sa : state A) (f : A -> state B) : state B :=
   fun x => let: Store a c := sa x in f a c.
 
+
 (* A convenient notation for programming in monadic style, borrowed to Cyril :) *)
 Notation "'sdo' x <- y ; z" :=
   (sbind y (fun x => z)) (at level 99, x at level 0, y at level 0,
     format "'[hv' 'sdo'  x  <-  y ;  '/' z ']'").
 
-Lemma sbind_return (x : A) (f : A -> state B) :
-  (sdo y <- (sreturn x); f y) = f x.
+Lemma sbind_return (a : A) (f : A -> state B) :
+  (sdo x <- (sreturn a); f x) = f a.
 Proof. by []. Qed.
 
-Lemma sreturn_bind (x : state A) : (sdo a <- x; sreturn a) =1 x.
-Proof. by move=> c; rewrite /sbind; case: (x c). Qed.
+Lemma sreturn_bind (sa : state A) : (sdo x <- sa; sreturn x) =1 sa.
+Proof. by move=> c; rewrite /sbind; case: (sa c). Qed.
 
-Lemma sbind_comp (f : A -> state B) (g : B -> state C) (x : state A) :
-(sdo b <- (sdo a <- x; f a); g b) =1 (sdo a <- x; sdo b <- (f a); g b).
-Proof. by move=> c; rewrite /sbind; case: (x c). Qed.
+Lemma sbind_comp (f : A -> state B) (g : B -> state C) (sa : state A) :
+(sdo b <- (sdo a <- sa; f a); g b) =1 (sdo a <- sa; sdo b <- (f a); g b).
+Proof. by move=> c; rewrite /sbind; case: (sa c). Qed.
 
 Definition srev (sl : state (seq A)) := sdo l <- sl; sreturn (rev l).
 
@@ -616,12 +580,16 @@ Proof. by rewrite /srev /= /sbind; case: (sl c). Qed.
 Lemma ct_srev sl c : ct (srev sl c) = ct (sl c).
 Proof. by rewrite /srev /= /sbind; case: (sl c). Qed.
 
+
 Fixpoint spipe (f : A -> state B) (l : seq A) : state (seq B) :=
   if l is a :: l then
     sdo s1 <- f a;
     sdo l1 <- spipe f l;
     sreturn (s1 :: l1)
  else sreturn [::].
+
+Lemma data_spipe_nil f c : data (spipe f [::] c) = [::].
+Proof. by []. Qed.
 
 Lemma data_spipe_cons f s l c :
   data (spipe f (s :: l) c) =
@@ -630,6 +598,20 @@ Proof.
 by rewrite /sbind /= /sbind; case: (f s c) => d1 c1 /=; case: (spipe f l c1).
 Qed.
 
+(* Remark: If we exchange the two sdo in the code of spipe, we would
+    obtain a piping which
+   follows the above specification (which would suit an interpretation of
+    words as trajectories where the last letter codes the first move).
+Lemma data_spipe_cons f s l c :
+  data (spipe f (s :: l) c) =
+  data (f s (ct (spipe f l c))) :: data (spipe f l c).
+Proof.
+by rewrite /sbind /= /sbind; case:  (spipe f l c) => d1 c1; case: (f s c1).
+Qed.
+ *)
+
+Lemma ct_spipe_nil f c : ct (spipe f [::] c) = c.
+Proof. by []. Qed.
 
 Lemma ct_spipe_cons f s l c :
   ct (spipe f (s :: l) c) = ct (spipe f l (ct (f s c))).
@@ -664,9 +646,19 @@ Proof. by rewrite -cats1 ct_spipe_cat ct_spipe_cons. Qed.
 End StateMonadDefs.
 
 Notation "'sdo' x <- y ; z" :=
-
   (sbind y (fun x => z)) (at level 99, x at level 0, y at level 0,
     format "'[hv' 'sdo'  x  <-  y ;  '/' z ']'").
+
+(* Step by step transformation of an A-word into a B-word. The two counters are
+   used to discriminate interleaved Dyck-words:
+   - c2 checks for Dyck words on the alphabet (N-W, SE), where N-W is the
+     concatenation of the two letters N and W, used as a single opening
+     parenthesis. Each pair of such parentheses found by c2 is translated into
+     (N-SE, W).
+   - c1 checks for Dyck words on the alphabet (N, SE). Each pair of such parentheses
+     found by c1 is translated into (N, SE).
+   - remaining occurrences of letter W are translated to N
+   - the last case of the match (SE, (0, 0)) is never reached when scanning an A-word. *)
 
 Definition sA2B (s : step) : state step := fun c =>
   match s, c with
@@ -680,6 +672,7 @@ Definition sA2B (s : step) : state step := fun c =>
 
 Arguments sA2B s c : simpl never.
 
+(* Inverse transformation. *)
 Definition sB2A (s : step) : state step := fun c =>
   match s, c with
     | N, (0, c2)      => mkStore W 0 c2
@@ -691,10 +684,118 @@ Definition sB2A (s : step) : state step := fun c =>
 
 Arguments sB2A s c : simpl never.
 
+(* For any state x, if the counter statisfies the premisse, performing one step
+   transformation after the other keeps x unchanged. Note that an A-word
+   cannot start with SE hence in particular, this premisse condition is
+   verified initially. *)
+
 Lemma sA2BK (s : step) (c : cmpt2) :
   [|| (c.1 != 0%N), (c.2 != 0%N) | (s != SE)] ->
   (sdo x <- (sB2A s); sA2B x) c = sreturn s c.
 Proof. by case: s; case: c => [] [| n1] [|n2]. Qed.
+
+Lemma sB2AK  (s : step) (c : cmpt2) :
+  [|| (c.1 != 0%N), (c.2 != 0%N) | (s != SE)] ->
+  (sdo x <- (sA2B s); sB2A x) c = sreturn s c.
+Proof. by case: s; case: c => [] [| n1] [|n2]. Qed.
+
+Definition readA2B : seq step -> state (seq step) := spipe sA2B.
+Definition readB2A : seq step -> state (seq step) := spipe sB2A.
+
+Definition csum (c : cmpt2) : nat := (c.1 + c.2)%N.
+
+Lemma csum0 c : csum c = 0%N -> c = (0%N, 0%N).
+Proof. by case: c => [[| c1]] [| c2]. Qed.
+
+Lemma csum0l c : csum (0%N, c) = c. by []. Qed.
+
+Lemma csum0r c : csum (c, 0%N) = c. by rewrite /csum addn0. Qed.
+
+Lemma csum_A2B_N c : csum (ct (sA2B N c)) = (csum c).+1.
+Proof. by rewrite /csum; case: c => [[| c1]] [| c2]. Qed.
+
+
+Lemma csum_A2B_W c : csum (ct (sA2B W c)) = csum c.
+Proof.
+by rewrite /csum; case: c => [[| c1]] [| c2]; rewrite ?addn0 ?addn1 ?addnS.
+Qed.
+
+(* This one is a bit clumsy. *)
+Lemma csum_A2B_SE c : csum c = (csum (ct (sA2B SE c)) + (csum c != 0))%N.
+Proof.
+by rewrite /csum; case: c => [[| c1]] [| c2]; rewrite ?addn0 ?addn1 ?addnS.
+Qed.
+
+Definition preA l :=   (forall n, (#SE (take n l) <= #N (take n l)))%N.
+
+Lemma preA_rcons l a : preA (rcons l a) -> preA l.
+Proof.
+rewrite /preA => preAla n; case: (ltnP n (size l)) => [ltnsl |].
+  by move: (preAla n); rewrite -cats1 take_cat ltnsl.
+by move/take_oversize->; move: (preAla (size l)); rewrite -cats1 take_size_cat.
+Qed.
+
+Lemma count_mem_rcons {T : eqType} l (a b : T) :
+  count_mem a (rcons l b) = ((count_mem a l) + (b == a))%N.
+Proof. by rewrite -cats1 count_cat /= addn0. Qed.
+
+(* d1 is the number of Dyck words on (NW, SE) aready processed
+   d2 is the number of Dyck words on (N, SE) aready processed
+   fw is the number of "free" occurrences (i.e. which did not contribute to
+   d1) already processed. *)
+Record sA2B_invariant_data := InvData {d1 : nat; d2 : nat; fw : nat}.
+
+Lemma preA_sA2B_invariant l ci (c := ct (readA2B l ci)) :
+  preA l ->
+  exists i : sA2B_invariant_data,
+    [/\ (csum ci + #N l = (d1 i) + (d2 i) + csum c)%N,
+        (#SE l = (d1 i) + (d2 i))%N &
+        (ci.2 + #W l = (d1 i) + c.2 + (fw i))%N].
+Proof.
+rewrite {}/c; elim/last_ind: l => [| l h ihl] /= preAlh.
+   by exists (InvData 0%N 0%N 0%N); rewrite /= addn0.
+rewrite !ct_spipe_rcons -/readA2B.
+have {ihl} /ihl [[dl1 dl2 fwl /=]] : preA l by exact: preA_rcons.
+move: (ct (readA2B l ci)) => c [eN eSE eW].
+case: h preAlh => preAlh.
+- have -> : #N (rcons l N) = (#N l).+1 by rewrite /count_N count_mem_rcons addn1.
+  have -> : #W (rcons l N) = #W l by rewrite /count_W count_mem_rcons addn0.
+  have -> : #SE (rcons l N) = #SE l by rewrite -cats1 /count_SE count_cat addn0.
+  rewrite !csum_A2B_N !addnS eN; exists (InvData dl1 dl2 fwl); split => //=.
+  suff {eN eW} -> : (ct (sA2B N c)).2 = c.2 by [].
+  by case: c.
+- have -> : #N (rcons l W) = #N l by rewrite /count_N count_mem_rcons addn0.
+  have -> : #W (rcons l W) = (#W l).+1 by rewrite /count_W count_mem_rcons addn1.
+  have -> : #SE (rcons l W) = #SE l by rewrite -cats1 /count_SE count_cat addn0.
+  rewrite !csum_A2B_W !addnS {}eW {}eN {}eSE {preAlh}; case: c => [[| c1]] c2 /=.
+    by rewrite csum0l /=; exists (InvData dl1 dl2 fwl.+1) => /=.
+  by exists (InvData dl1 dl2 fwl); split => //=; rewrite addnS addSn.
+- have nN : #N (rcons l SE) = #N l by rewrite /count_N count_mem_rcons addn0.
+  have nW : #W (rcons l SE) = #W l by rewrite /count_W count_mem_rcons addn0.
+  have nSE : #SE (rcons l SE) = (#SE l).+1.
+    by rewrite /count_SE count_mem_rcons addn1.
+  have {preAlh} lt_SE_N : (#SE l < #N l)%N.
+    by move: (preAlh (size (rcons l SE))); rewrite take_size nSE nN.
+  have {lt_SE_N} : csum c != 0%N.
+    apply: contraL lt_SE_N => /eqP sumc0.
+    by rewrite -leqNgt -[#SE l]addn0 eSE -sumc0 -eN leq_addl.
+  rewrite {}nN {}nW {}nSE {}eN {}eSE {}eW.
+  case: c => [[|c1]] [| c2] // _; rewrite ?csum0r ?csum0l /=.
+  - by exists (InvData dl1.+1 dl2 fwl); rewrite ?addnS ?addSn.
+  - by exists (InvData dl1 dl2.+1 fwl); rewrite /= addn0 !addnS !addSn.
+  - by exists (InvData dl1.+1 dl2 fwl); rewrite /csum /= addnS !addSn !addnS.
+Qed.
+
+
+(*
+Lemma whatWeWant l : l \in Aseq ->
+  (sdo x <- (srev (readA2B l)); readB2A x) (0, 0)%N = sreturn (rev l) (0, 0)%N.
+Proof.
+elim: l => [|t l ihl] //= htl.
+rewrite /srev.
+rewrite sbind_comp /=.
+Admitted.
+
 
 Definition stateA2B : seq step -> state (seq step) := srev \o (spipe sA2B).
 
@@ -730,6 +831,7 @@ Search _ injective cancel.
 
 
 Definition readB2A : seq step -> state (seq step) := spipe sB2A.
+Definition readA2B : seq step -> state (seq step) := spipe sA2B.
 
 Lemma whatWeWant l : l \in Aseq ->
   (sdo x <- (srev (readA2B l)); readB2A x) (0, 0)%N = sreturn (rev l) (0, 0)%N.
@@ -738,9 +840,392 @@ Admitted.
 
 
 
+(* Dyck words, as sequences of booleans, where false is the opening parenthesis
+   and true is the closing one *)
+
+Fixpoint dyck_c (l : seq bool) (c : nat) : bool :=
+  match l with
+    | [::] => c == 0%N
+    | s :: l' => if (~~ s) then dyck_c l' c.+1
+                else if c is c'.+1 then dyck_c l' c' else false
+  end.
+
+Definition dyck l := dyck_c l 0%N.
+
+Lemma dyck_cP c l : reflect
+ ((forall n, (count_mem true (take n l) <= c + count_mem false (take n l))%N) /\
+ (c + count_mem false l = count_mem true l)%N) (dyck_c l c).
+Proof.
+apply: (iffP idP).
+  elim: l c => [|b l ihl] c //; first by move/eqP->.
+  case: b; last first.
+  - by move/ihl => [? hl]; split => [[|n] //|]; rewrite /= add0n addnA addn1 ?hl.
+  - case: c => [|c] // /ihl => [] [hl1 hl2]; split => [[|n]|] //=; rewrite add0n.
+    + rewrite !addSn add0n ltnS; exact: leq_trans (hl1 _) _.
+    + by rewrite !addSn add0n hl2.
+elim: l c => [ /= |b l ihl] c; first by rewrite addn0; case => _ ->.
+case: b; last first.
+  case=> h1 h2; apply: ihl; split; last by rewrite -[RHS]h2 /= addnA addn1.
+  case=> [|n] /=; first by rewrite take0 /= addn0.
+  by apply: leq_trans (h1 n.+2) _; rewrite /= addnA addn1.
+case: c => [|c] [h1 h2] /=; first by move: (h1 1%N); rewrite /= take0 !addn0.
+apply: ihl; split; last by move: h2; rewrite /= add0n add1n addSn; case.
+by move=> n; move: (h1 n.+1); rewrite /= add0n add1n addSn.
+Qed.
+
+Lemma dyckP l : reflect
+ ((forall n, (count_mem true (take n l) <= count_mem false (take n l))%N) /\
+ (count_mem false l = count_mem true l)) (dyck l).
+Proof. by apply: (iffP (dyck_cP _ _)). Qed.
+
+Lemma dyck_trueN l : dyck (true :: l) = false.
+Proof.
+by apply/negP; move/dyckP; case; move/(_ 1%N); rewrite /= take0 /= !addn0.
+Qed.
+
+(* Entangling words wt and wf, following the pattern provided by m:
+   - filter is_true m becomes a prefix of wt (padded with adflt if necessary)
+   - filter is_false m becomes a prefix of wf (padded with adflt if necessary)
+*)
+Definition bitseqN (m : bitseq) := map negb m.
+
+Lemma count_bipartition {T} (p : pred T) (m : bitseq) (s : seq T) :
+   count p (take (size m) s) =
+  (count p (mask m s) + count p (mask (bitseqN m) s))%N.
+elim: m s => [|bm m ihm] s; first by rewrite /= take0.
+by case: s => [|hs s] //=; case: bm; rewrite /= ihm addnA // addnCA addnA.
+Qed.
+
+Lemma count_nseq  {T} (p : pred T) (t : T) (n : nat) :
+  count p (nseq n t) = ((p t) * n)%N.
+Proof.
+case hpt: (p t); last first.
+  by rewrite mul0n; apply/eqP; rewrite eqn0Ngt -has_count has_nseq hpt andbF.
+rewrite mul1n -[RHS](size_nseq n t); apply/eqP; rewrite -all_count all_nseq hpt.
+by rewrite orbT.
+Qed.
+
+Lemma count_sub {T : eqType} (p : pred T) (s1 s2 : seq T) :
+  subseq s1 s2 -> (count p s1 <= count p s2)%N.
+Proof.
+elim: s2 s1 => [|t2 s2 ihs2] s1 //; first by move/eqP->.
+case: s1 => [|t1 s1] //=; case: ifP=> ht12 hs12.
+- rewrite (eqP ht12) leq_add2l; exact: ihs2.
+- move/ihs2: hs12=> /= h; apply: leq_trans h _; exact: leq_addl.
+Qed.
+
+Lemma take_subseq {T : eqType} (s : seq T) n : subseq (take n s) s.
+Proof.
+elim: n s => [|n] s; first by rewrite take0 sub0seq.
+by case=> [| t u] //; rewrite /= eqxx.
+Qed.
+
+Lemma count_take {T : eqType} (p : pred T) (s1 : seq T) n:
+  (count p (take n s1) <= count p s1)%N.
+Proof. apply: count_sub;  exact: take_subseq. Qed.
+
+Section Shuffle.
+
+Variables (A : Type) (adflt : A).
+
+Fixpoint shuffle (m : bitseq) (wt wf : seq A) : seq A :=
+  match m with
+    |[::] => [::]
+    |true :: m'  => if wt is hwt :: wt' then hwt :: shuffle m' wt' wf
+                    else adflt :: shuffle m' wt wf
+    |false :: m' => if wf is hwf :: wf' then hwf :: shuffle m' wt wf'
+                    else adflt :: shuffle m' wt wf
+  end.
+
+Lemma shuffle_consT m wt wf :
+  shuffle (true :: m) wt wf = if wt is hwt :: wt' then hwt :: shuffle m wt' wf
+                              else adflt :: shuffle m wt wf.
+Proof. by []. Qed.
+
+Lemma shuffle_consF m wt wf :
+  shuffle (false :: m) wt wf = if wf is hwf :: wf' then hwf :: shuffle m wt wf'
+                               else adflt :: shuffle m wt wf.
+Proof. by []. Qed.
+
+Lemma size_shuffle m wt wf : size (shuffle m wt wf) = size m.
+Proof.
+elim: m wt wf => [|[] m ihm] //; first by case=> [|hwt wt] wf /=; rewrite ihm.
+by move=> wt; case=> [|hwf wf] /=; rewrite ihm.
+Qed.
+
+Lemma mask_shuffleT m wt wf :
+  mask m (shuffle m wt wf) =
+  (take (count_mem true m) wt) ++ nseq ((count_mem true m) - size wt)%N adflt.
+Proof.
+elim: m wt wf => [|[] m ihm] wt wf; first by rewrite take0.
+- by rewrite shuffle_consT; case: wt => [|hwt wt] /=; rewrite ihm //= subn0.
+- by rewrite shuffle_consF; case: wf => [|hwf wf] /=; rewrite ihm //= subn0.
+Qed.
+
+Lemma mask_shuffleF m wt wf :
+  mask (bitseqN m) (shuffle m wt wf) =
+  (take (count_mem false m) wf) ++ nseq ((count_mem false m) - size wf)%N adflt.
+Proof.
+elim: m wt wf => [|[] m ihm] wt wf; first by rewrite take0.
+- by rewrite shuffle_consT; case: wt => [|hwt wt]; rewrite [mask _ _]/= ihm.
+- by rewrite shuffle_consF; case: wf => [|hwf wf] /=; rewrite ihm //= subn0.
+Qed.
+
+Lemma count_shuffle m wt wf p :
+  count p (shuffle m wt wf) =
+  (count p (take (count_mem true m) wt) + count p (take (count_mem false m) wf) +
+  (p adflt) * ((count_mem true) m - size wt + ((count_mem false) m - size wf)))%N.
+Proof.
+have -> : shuffle m wt wf = take (size m) (shuffle m wt wf).
+  by rewrite take_oversize // size_shuffle.
+rewrite count_bipartition mask_shuffleT mask_shuffleF !count_cat !count_nseq.
+rewrite -!addnA; congr (_ + _)%N; rewrite addnCA; congr (_ + _)%N.
+by rewrite -mulnDr.
+Qed.
+
+Lemma count_shuffle_exact m wt wf p :
+  size wt = count_mem true m -> size wf = count_mem false m ->
+  count p (shuffle m wt wf) = (count p wt + count p wf)%N.
+Proof.
+move=> swt swf; rewrite count_shuffle -swf -swt !take_oversize // !subnn muln0.
+by [].
+Qed.
+
+Lemma take_shuffle m wt wf n :
+  take n (shuffle m wt wf) = shuffle (take n m) wt wf.
+Proof.
+elim: n m wt wf => [|n ihn] [| [] m] wt wf; rewrite ?take0 //.
+- by case: wt ihn => [|bwt wt] ihn //=; rewrite ihn.
+- by case: wf ihn => [|bwf wf] ihn //=; rewrite ihn.
+Qed.
+
+Lemma count_take_shuffle_exact m wt wf p1 p2 n :
+  size wt = count_mem true m -> size wf = count_mem false m ->
+  (forall n, count p1 (take n wt) <= count p2 (take n wt))%N ->
+  (forall n, count p1 (take n wf) <= count p2 (take n wf))%N ->
+  (count p1 (take n (shuffle m wt wf)) <= count p2 (take n (shuffle m wt wf)))%N.
+Proof.
+move=> swt swf hpt hpf; rewrite take_shuffle !count_shuffle.
+apply: leq_add; first exact: leq_add.
+have -> : ((count_mem true) (take n m) - size wt = 0)%N.
+  apply/eqP; rewrite subn_eq0 swt; exact: count_take.
+have -> : ((count_mem false) (take n m) - size wf = 0)%N.
+  apply/eqP; rewrite subn_eq0 swf; exact: count_take.
+by rewrite addn0 muln0.
+Qed.
+
+End Shuffle.
+
+Definition dyck_N_SE (m : bitseq) : seq step :=
+  map (fun b => if b then SE else N) m.
+
+(* Definition dyck_NSE_W1 (m : bitseq) := *)
+(*   flatten (map (fun b => if b then [:: W] else [:: N; SE]) m). *)
+
+Definition dyck_NSE_W (m : bitseq) :=
+  foldr (fun b l => (if b then W :: l else N :: SE :: l)) [::] m.
+
+Lemma dyck_NSE_W_cons b m :
+ dyck_NSE_W (b :: m) = if b then W :: dyck_NSE_W m
+                        else N :: SE :: dyck_NSE_W m.
+Proof. by []. Qed.
+
+(* Lemma dyck_NSE_W1_cons b m : *)
+(*  dyck_NSE_W1 (b :: m) = if b then W :: dyck_NSE_W1 m *)
+(*                         else N :: SE :: dyck_NSE_W1 m. *)
+(* Proof. by case: b. Qed. *)
+
+(* Lemma dyck_NSE_W12 : dyck_NSE_W1 =1 dyck_NSE_W. *)
+(* Proof. by elim=> [| b m ihm] //=; rewrite -ihm dyck_NSE_W1_cons. Qed. *)
+
+Lemma countSE_dyck_N_SE m : count_SE (dyck_N_SE m) = count_mem true m.
+Proof.
+rewrite /count_SE /count_N /dyck_N_SE !count_map.
+suff /eq_count -> :
+  (preim (fun b : bool => if b then SE else N) is_SE) =1 pred1 true by [].
+by case.
+Qed.
+
+Lemma countN_dyck_N_SE m : count_N (dyck_N_SE m) = count_mem false m.
+Proof.
+rewrite /count_SE /count_N /dyck_N_SE !count_map.
+suff /eq_count -> :
+  (preim (fun b : bool => if b then SE else N) is_N) =1 pred1 false by [].
+by case.
+Qed.
+
+Lemma dyck_N_SE_count_le m n : dyck m ->
+  (count_SE (dyck_N_SE (take n m)) <= count_N (dyck_N_SE (take n m)))%N.
+Proof. by case/dyckP=> cm _; rewrite countN_dyck_N_SE countSE_dyck_N_SE. Qed.
+
+Lemma dyck_N_SE_count m : dyck m ->
+  (count_SE (dyck_N_SE m) = count_N (dyck_N_SE m))%N.
+Proof. by case/dyckP=> _ cm; rewrite countN_dyck_N_SE countSE_dyck_N_SE. Qed.
+
+Lemma countW_dyck_NSE_W m : count_W (dyck_NSE_W m) = count_mem true m.
+Proof.
+by elim: m => [|b m ihm] //=; rewrite -ihm; case: b; rewrite ?addSn add0n.
+Qed.
+
+Lemma countN_dyck_NSE_W m : count_N (dyck_NSE_W m) = count_mem false m.
+Proof.
+by elim: m => [|b m ihm] //=; rewrite -ihm; case: b; rewrite ?addSn add0n.
+Qed.
+
+Lemma countSE_dyck_NSE_W m : count_SE (dyck_NSE_W m) = count_mem false m.
+Proof.
+by elim: m => [|b m ihm] //=; rewrite -ihm; case: b; rewrite ?addSn add0n.
+Qed.
+
+Lemma dyck_NSE_W_count_le m n : dyck m ->
+  (count_W (dyck_NSE_W (take n m)) <=
+   count_SE (dyck_NSE_W (take n m)) <= count_N (dyck_NSE_W (take n m)))%N.
+Proof.
+case/dyckP=> cm _.
+by rewrite countW_dyck_NSE_W countN_dyck_NSE_W countSE_dyck_NSE_W cm /=.
+Qed.
+
+Lemma dyck_NSE_W_count m : dyck m ->
+  count_N (dyck_NSE_W m) = count_SE (dyck_NSE_W m) /\
+  count_SE (dyck_NSE_W m) = count_W (dyck_NSE_W m).
+Proof.
+case/dyckP=> _ cm.
+by rewrite countW_dyck_NSE_W countN_dyck_NSE_W countSE_dyck_NSE_W cm.
+Qed.
+
+Section Target.
+
+Variable n : nat.
+
+(* Common target of bijections with Aseqs and Bseqs respectively *)
+Record target : Type := Target {
+  o_val : 'I_n;
+  d_val : 'I_n;
+  dom1_val : (3 * o_val + 2 * d_val).-tuple bool;
+  dom2_val : n.-tuple bool;
+  m1_val   : (2 * o_val)%N.-tuple bool;
+  m2_val   : (2 * d_val)%N.-tuple bool;
+  dom1_supportT : (count_mem true dom1_val = 3 * o_val)%N;
+  dom2_supportT : (count_mem true dom2_val = 3 * o_val + 2 * d_val)%N;
+  dyck_m1 : dyck m1_val;
+  dyck_m2 : dyck m2_val;
+  dom12P : all (pred1 false) (map (fun i => i.1 && i.2) (zip dom1_val dom2_val));
+  od_valP : (3 * o_val + 3 * d_val = n)%N
+}.
+
+Section ElementaryThings.
+
+Variable t : target.
+
+Local Notation o := (o_val t).
+Local Notation d := (d_val t).
+Local Notation dom1 := (dom1_val t).
+Local Notation dom2 := (dom2_val t).
+Local Notation m1 := (m1_val t).
+Local Notation m2 := (m2_val t).
+
+
+Lemma dom1_supportF : (count_mem false dom1 = 2 * d)%N.
+Proof.
+apply/eqP; rewrite -(eqn_add2l (count_mem true dom1)); apply/eqP.
+rewrite [in RHS]dom1_supportT /= -[RHS](size_tuple dom1).
+rewrite -(count_predC (pred1 true)).
+suff /eq_count -> : pred1 false =1 predC (pred1 true) by [].
+by case.
+Qed.
+
+Lemma dom2_supportF : (count_mem false dom2 = d)%N.
+Proof.
+apply/eqP; rewrite -(eqn_add2l (count_mem true dom2)); apply/eqP.
+rewrite [in RHS]dom2_supportT /= -addnA -mulSnr od_valP.
+rewrite -[RHS](size_tuple dom2) -(count_predC (pred1 true)).
+suff /eq_count -> : pred1 false =1 predC (pred1 true) by [].
+by case.
+Qed.
+
+
+Definition target2B :=
+  shuffle N dom2 (shuffle N dom1 (dyck_NSE_W m1) (dyck_N_SE m2)) (nseq d N).
+
+Definition target2A :=
+  shuffle N dom2 (shuffle N dom1 (dyck_NSE_W m1) (dyck_N_SE m2)) (nseq d W).
+
+Lemma target2BP : Bseq target2B.
+Proof.
+apply/BseqP; split; last first.
+  rewrite /count_SE count_shuffle_exact; last 2 first.
+  - by rewrite size_shuffle size_tuple dom2_supportT.
+  - by rewrite size_nseq dom2_supportF.
+  rewrite count_shuffle_exact; last 2 first.
+  - admit. (* prove size (dyck_NSE_W m1) *)
+  - by rewrite size_map size_tuple dom1_supportF.
+  have -> :  count is_SE (nseq d N) = 0%N. admit.
+  (*changle count_W for count_mem *)
+  rewrite /count_W count_shuffle_exact; last 2 first.
+  - by rewrite size_shuffle size_tuple dom2_supportT.
+  - by rewrite size_nseq dom2_supportF.
+  rewrite count_shuffle_exact; last 2 first.
+  - admit.  (* prove size (dyck_NSE_W m1) *)
+  - by rewrite size_map size_tuple dom1_supportF.
+  rewrite /count_N count_shuffle_exact; last 2 first.
+  - by rewrite size_shuffle size_tuple dom2_supportT.
+  - by rewrite size_nseq dom2_supportF.
+  rewrite count_shuffle_exact; last 2 first.
+  - admit.  (* prove size (dyck_NSE_W m1) *)
+  - by rewrite size_map size_tuple dom1_supportF.
+  rewrite addn0; case: (dyck_NSE_W_count (dyck_m1 t)).
+  move: (dyck_N_SE_count (dyck_m2 t)).
+  rewrite /count_SE /count_N /count_W => -> -> ->.
+  rewrite -/count_SE -/count_N -/count_W.
+  have -> : count_W (dyck_N_SE m2) = 0%N. admit.
+  have -> : count_W (nseq d N) = 0%N. admit.
+  rewrite !addn0 !PoszD -!addrA; do 2! congr (_ + _).
+  rewrite countW_dyck_NSE_W countN_dyck_N_SE.
+  admit.
+move=> k; apply/andP; split.
+rewrite /count_W. apply: count_take_shuffle_exact; last 1 first.
+- admit. (* trivial *)
+- by rewrite size_shuffle dom2_supportT size_tuple.
+- by rewrite size_nseq dom2_supportF.
+move=> {k} k; apply: count_take_shuffle_exact.
+- admit. (* prove size (dyck_NSE_W m1) *)
+- by rewrite size_map dom1_supportF size_tuple.
+- move=> {k} k; case/andP: (dyck_NSE_W_count_le k (dyck_m1 t)).
+  rewrite -/count_SE -/count_N -/count_W.
+ admit. (* take commutes withe the interpretations *)
+- move=> {k} k.
+  have := (dyck_N_SE_count_le k (dyck_m2 t)).
+ admit. (* take commutes withe the interpretations *)
+apply: count_take_shuffle_exact.
+Admitted.
+
+
+End ElementaryThings.
+
+Definition target2B t :=
+  let: Target o d dom1 dom2 m1 m2 _ _ _ _ _ _ := t in
+  shuffle N dom2 (shuffle N dom1 (dyck_NSE_W m1) (dyck_N_SE m2)) (nseq d N).
+
+Definition target2A t :=
+  let: Target o d dom1 dom2 m1 m2 _ _ _ _ _ _ := t in
+  shuffle N dom2 (shuffle N dom1 (dyck_NSE_W m1) (dyck_N_SE m2)) (nseq d W).
+
+Lemma target2BP t : Bseq (target2B t).
+Proof.
+case: t => o d dom1 dom2 m1 m2 supd1 supd2 dyckm1 dyckm2 dom12 eod /=.
+apply/BseqP; split; last first.
+  rewrite /count_SE count_shuffle_exact; last first.
+  rewrite size_nseq dom2_supportF.
+Admitted.
+
+End Target.
 
 
 
+
+
+
+*)
 
 
 
