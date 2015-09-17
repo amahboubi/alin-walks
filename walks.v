@@ -588,6 +588,14 @@ Fixpoint spipe (f : A -> state B) (l : seq A) : state (seq B) :=
     sreturn (s1 :: l1)
  else sreturn [::].
 
+Lemma spipe_nil f : spipe f [::] = sreturn [::]. by []. Qed.
+
+Lemma spipe_cons f l a :
+  spipe f (a :: l) = sdo s1 <- f a; sdo l1 <- spipe f l; sreturn (s1 :: l1).
+Proof. by []. Qed.
+
+
+
 Lemma data_spipe_nil f c : data (spipe f [::] c) = [::].
 Proof. by []. Qed.
 
@@ -648,6 +656,43 @@ End StateMonadDefs.
 Notation "'sdo' x <- y ; z" :=
   (sbind y (fun x => z)) (at level 99, x at level 0, y at level 0,
     format "'[hv' 'sdo'  x  <-  y ;  '/' z ']'").
+
+
+Lemma bind_extl {A B} {s1 s2 : state A} {f : A -> state B} :
+  s1 =1 s2 -> (sdo x <- s1; f x) =1 (sdo x <- s2; f x).
+Proof. move=> eqs c; by rewrite /sbind eqs. Qed.
+
+Lemma bind_extr {A B} {s : state A} {f1 f2 : A -> state B} :
+  (forall a, f1 a =1 f2 a) -> (sdo x <- s; f1 x) =1 (sdo x <- s; f2 x).
+Proof. by move=> ef c; rewrite /sbind; case: s => *; rewrite ef. Qed.
+
+Lemma bind_eqr {A B} {s : state A} {f1 f2 : A -> state B} c (s1 := s c):
+  f1 (data s1)  (ct s1) = f2 (data s1) (ct s1) ->
+  (sdo x <- s; f1 x) c = (sdo x <- s; f2 x) c.
+Proof. by rewrite /sbind {}/s1; case: (s c)=> d1 c1 /=. Qed.
+
+Lemma bind_eql {A B} {s1 s2 : state A} {f : A -> state B} c :
+  s1 c = s2 c ->(sdo x <- s1; f x) c = (sdo x <- s2; f x) c.
+Proof. by rewrite /sbind=> ->. Qed.
+
+Lemma spipe_cat {A B} (f : A -> state B) l1 l2 :
+ spipe f (l1 ++ l2) =1 sdo l1 <- spipe f l1; sdo l2 <- spipe f l2;
+                      sreturn (l1 ++ l2).
+Proof.
+elim: l1 l2 => [| s l1 ihl1] l2 //= c1.
+  by rewrite sbind_return -[LHS]sreturn_bind; apply: bind_extr.
+rewrite sbind_comp; apply: bind_extr=> b c2.
+rewrite (bind_extl (ihl1 l2)) !sbind_comp; apply: bind_extr=> lb1 c.
+by rewrite sbind_return sbind_comp; apply: bind_extr=> lb2 c3.
+Qed.
+
+Lemma spipe_rcons {A B} (f : A -> state B) l a :
+ spipe f (rcons l a) =1
+ sdo l1 <- spipe f l; sdo s1 <- f a; sreturn (rcons l1 s1).
+Proof. move=> c1; rewrite -cats1 spipe_cat.
+apply: bind_extr => lb /= c2; rewrite sbind_comp; apply: bind_extr=> b c3.
+by rewrite sbind_comp !sbind_return cats1.
+Qed.
 
 (* Step by step transformation of an A-word into a B-word. The two counters are
    used to discriminate interleaved Dyck-words:
@@ -735,6 +780,9 @@ rewrite /preA => preAla n; case: (ltnP n (size l)) => [ltnsl |].
 by move/take_oversize->; move: (preAla (size l)); rewrite -cats1 take_size_cat.
 Qed.
 
+Lemma ApreA l : l \in Aseq -> preA l.
+Proof. by case/AseqP. Qed.
+
 Lemma count_mem_rcons {T : eqType} l (a b : T) :
   count_mem a (rcons l b) = ((count_mem a l) + (b == a))%N.
 Proof. by rewrite -cats1 count_cat /= addn0. Qed.
@@ -745,7 +793,7 @@ Proof. by rewrite -cats1 count_cat /= addn0. Qed.
    d1) already processed. *)
 Record sA2B_invariant_data := InvData {d1 : nat; d2 : nat; fw : nat}.
 
-Lemma preA_sA2B_invariant l ci (c := ct (readA2B l ci)) :
+Lemma preA_rA2B_inv l ci (c := ct (readA2B l ci)) :
   preA l ->
   exists i : sA2B_invariant_data,
     [/\ (csum ci + #N l = (d1 i) + (d2 i) + csum c)%N,
@@ -786,6 +834,54 @@ case: h preAlh => preAlh.
   - by exists (InvData dl1.+1 dl2 fwl); rewrite /csum /= addnS !addSn !addnS.
 Qed.
 
+Lemma preA_rA2B_noex l a ci (c := ct (readA2B l ci)) :
+  preA (rcons l a) -> [|| (c.1 != 0%N), (c.2 != 0%N) | (a != SE)].
+Proof.
+move=> laA.
+have /(preA_rA2B_inv ci) [[lad1 lad2 lafw] /=] : preA l by apply: preA_rcons.
+rewrite -/c; case: c => [[|c1]] [|c2] //=; case: a laA => // laA.
+rewrite addn0 addn0; case=> eN eSE eW.
+suff : (#SE l < #N l)%N.
+  by apply: contraL; rewrite -leqNgt eSE -eN leq_addl.
+move/(_ (size (rcons l SE))): laA; rewrite take_size.
+have -> : #N (rcons l SE) = #N l by rewrite /count_N count_mem_rcons addn0.
+suff -> : #SE (rcons l SE) = (#SE l).+1 by [].
+by rewrite /count_SE count_mem_rcons addn1.
+Qed.
+
+Lemma readA2BK l : preA l ->
+               (sdo x <- spipe sA2B l; spipe sB2A (rev x)) =1 sreturn (rev l).
+Proof.
+elim/last_ind: l => [| l a ihl] // preA_la ci.
+rewrite (bind_extl (spipe_rcons _ _ _)).
+rewrite sbind_comp.
+have /bind_extr -> a0 :
+     (sdo b <- (sdo s1 <- (sA2B a); sreturn (rcons a0 s1)); spipe sB2A (rev b))
+  =1 (sdo s1 <- (sA2B a); (sdo b <- sreturn (rcons a0 s1); spipe sB2A (rev b))).
+  by move=> c; rewrite sbind_comp.
+have /bind_extr -> x :
+    (sdo s1 <- (sA2B a); (sdo b <- (sreturn (rcons x s1)); spipe sB2A (rev b)))
+  =1 (sdo s1 <- (sA2B a); spipe sB2A (rev (rcons x s1))).
+  by apply: bind_extr=> s; rewrite sbind_return.
+have /bind_extr -> x :
+    (sdo s1 <- (sA2B a); spipe sB2A (rev (rcons x s1)))
+ =1 (sdo s1 <- (sA2B a); spipe sB2A (s1 :: (rev x))).
+  by apply: bind_extr=> s; rewrite rev_rcons.
+have -> :
+  (sdo x <- (spipe sA2B l); (sdo s1 <- (sA2B a); spipe sB2A (s1 :: rev x))) ci =
+  (sdo x <- (spipe sA2B l); sdo s1 <- sreturn a; sdo l1 <- spipe sB2A (rev x);
+                             sreturn (s1 :: l1)) ci.
+  apply: bind_eqr.
+  have /bind_extr -> s1 :
+  spipe sB2A (s1 :: rev (data (spipe sA2B l ci))) =1
+  sdo s2 <- sB2A s1; sdo l1 <- spipe sB2A (rev (data (spipe sA2B l ci)));
+  sreturn (s2 :: l1).
+    by move=> c; rewrite spipe_cons.
+  by rewrite -sbind_comp; apply: bind_eql; apply: sB2AK; exact: preA_rA2B_noex.
+rewrite -sbind_comp.
+have /ihl  {ihl} /bind_extl -> : preA l by apply: preA_rcons.
+by rewrite sbind_return rev_rcons.
+Qed.
 
 (*
 Lemma whatWeWant l : l \in Aseq ->
