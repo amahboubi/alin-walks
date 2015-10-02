@@ -8,11 +8,11 @@ Section StateMonadDefs.
 
 Implicit Types (A B C : Type).
 
-Variable cmpt2 : Type.
+Variable D : Type.
 
-Record store A : Type := Store {data : A; ct : cmpt2}.
+Record store A : Type := Store {data : A; hidden : D}.
 
-Definition state A :=  cmpt2 -> store A.
+Definition state A :=  D -> store A.
 
 Definition sreturn {A} (a : A) : state A := fun c => Store a c.
 
@@ -46,7 +46,7 @@ Lemma sbind_extr {A B} {s : state A} {f1 f2 : A -> state B} :
 Proof. by move=> ef c; rewrite /sbind; case: s => *; rewrite ef. Qed.
 
 Lemma sbind_eqr {A B} {s : state A} {f1 f2 : A -> state B} c (s1 := s c) :
-  f1 (data s1)  (ct s1) = f2 (data s1) (ct s1) ->
+  f1 (data s1)  (hidden s1) = f2 (data s1) (hidden s1) ->
   (sdo x <- s; f1 x) c = (sdo x <- s; f2 x) c.
 Proof. by rewrite /sbind {}/s1; case: (s c)=> d1 c1 /=. Qed.
 
@@ -87,71 +87,47 @@ move=> c1; rewrite -cats1 spipe_cat; apply: sbind_extr => lb /= c2.
 by rewrite sbind_comp; apply: sbind_extr=> b c3; rewrite sbind_return -cats1.
 Qed.
 
-(* Lemma data_spipe_nil f c : data (spipe f [::] c) = [::]. *)
-(* Proof. by []. Qed. *)
-
-(* Lemma data_spipe_cons f s l c : *)
-(*   data (spipe f (s :: l) c) = *)
-(*   data (f s c) :: data (spipe f l (ct (f s c))). *)
-(* Proof. *)
-(* by rewrite /sbind /= /sbind; case: (f s c) => d1 c1 /=; case: (spipe f l c1). *)
-(* Qed. *)
-
-Lemma ct_spipe_nil {A B} (f : A -> state B) c : ct (spipe f [::] c) = c.
+Lemma hidden_spipe_nil {A B} (f : A -> state B) c : hidden (spipe f [::] c) = c.
 Proof. by []. Qed.
 
 Lemma data_spipe_nil {A B} (f : A -> state B) c : data (spipe f [::] c) = [::].
 Proof. by []. Qed.
 
-Lemma ct_spipe_cons  {A B} (f : A -> state B) s l c :
-  ct (spipe f (s :: l) c) = ct (spipe f l (ct (f s c))).
+Lemma hidden_spipe_cons  {A B} (f : A -> state B) s l c :
+  hidden (spipe f (s :: l) c) = hidden (spipe f l (hidden (f s c))).
 Proof.
 by rewrite /sbind /= /sbind; case: (f s c) => d1 c1 /=; case: (spipe f l c1).
 Qed.
 
 Lemma data_spipe_cons  {A B} (f : A -> state B) s l c :
-  data (spipe f (s :: l) c) = data (f s c) :: data (spipe f l (ct (f s c))).
+  data (spipe f (s :: l) c) = data (f s c) :: data (spipe f l (hidden (f s c))).
 Proof.
 by rewrite /sbind /= /sbind; case: (f s c) => d1 c1 /=; case: (spipe f l c1).
 Qed.
 
-
-(* Lemma data_spipe_cat f l1 l2 c : *)
-(*   data (spipe f (cat l1 l2) c) = *)
-(*   (data (spipe f l1 c)) ++ (data (spipe f l2 (ct (spipe f l1 c)))). *)
-(* Proof. *)
-(* elim: l1 l2 c => [| s l1 ihl1 l2 c] //; rewrite cat_cons [LHS]data_spipe_cons. *)
-(* by rewrite ihl1 data_spipe_cons ct_spipe_cons cat_cons. *)
-(* Qed. *)
-
-(* Lemma data_spipe_rcons f s l c : *)
-(*   data (spipe f (rcons l s) c) = *)
-(*   rcons (data (spipe f l c)) (data (f s (ct (spipe f l c)))). *)
-(* Proof. by rewrite -cats1 data_spipe_cat -cats1 data_spipe_cons. Qed. *)
-
-Lemma ct_spipe_cat {A B} (f : A -> state B) l1 l2 c :
-  ct (spipe f (l1 ++ l2) c) = ct (spipe f l2 (ct (spipe f l1 c))).
+Lemma hidden_spipe_cat {A B} (f : A -> state B) l1 l2 c :
+  hidden (spipe f (l1 ++ l2) c) = hidden (spipe f l2 (hidden (spipe f l1 c))).
 Proof.
-elim: l1 l2 c => [| s l1 ihl1 l2 c] //; rewrite cat_cons [LHS]ct_spipe_cons.
-by rewrite ihl1 ct_spipe_cons.
+elim: l1 l2 c => [| s l1 ihl1 l2 c] //; rewrite cat_cons [LHS]hidden_spipe_cons.
+by rewrite ihl1 hidden_spipe_cons.
 Qed.
 
 
 Lemma data_spipe_cat {A B} (f : A -> state B) l1 l2 c :
   data (spipe f (l1 ++ l2) c) =
-  data (spipe f l1 c) ++ data (spipe f l2 (ct (spipe f l1 c))).
+  data (spipe f l1 c) ++ data (spipe f l2 (hidden (spipe f l1 c))).
 Proof.
 elim: l1 l2 c => [| s l1 ihl1 l2 c] //; rewrite cat_cons [LHS]data_spipe_cons.
-by rewrite ihl1 data_spipe_cons ct_spipe_cons.
+by rewrite ihl1 data_spipe_cons hidden_spipe_cons.
 Qed.
 
-Lemma ct_spipe_rcons {A B} (f : A -> state B) s l c :
-  ct (spipe f (rcons l s) c) = ct (f s (ct (spipe f l c))).
-Proof. by rewrite -cats1 ct_spipe_cat ct_spipe_cons. Qed.
+Lemma hidden_spipe_rcons {A B} (f : A -> state B) s l c :
+  hidden (spipe f (rcons l s) c) = hidden (f s (hidden (spipe f l c))).
+Proof. by rewrite -cats1 hidden_spipe_cat hidden_spipe_cons. Qed.
 
 Lemma data_spipe_rcons {A B} (f : A -> state B) s l c :
   data (spipe f (rcons l s) c) =
-  rcons (data (spipe f l c)) (data (f s (ct (spipe f l c)))).
+  rcons (data (spipe f l c)) (data (f s (hidden (spipe f l c)))).
 Proof. by rewrite -cats1 data_spipe_cat data_spipe_cons /= cats1. Qed.
 
 End StateMonadDefs.

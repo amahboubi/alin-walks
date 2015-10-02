@@ -266,31 +266,6 @@ Lemma sB2AK  (s : step) (c : cmpt2) :  noex s c ->
   (sdo x <- (sA2B s); sB2A x) c = sreturn s c.
 Proof. by case: s; case: c => [] [| ?] [| ?]. Qed.
 
-(* The sum of the two counters is an intersting number since several
-   transitions leave it unchanged. We study how it varies in each case
-   of transition (in fact in each case of letter). *)
-Definition csum (c : cmpt2) : nat := c.1 + c.2.
-
-Lemma csum0 c : csum c = 0 -> c = (0, 0).
-Proof. by case: c => [[| c1]] [| c2]. Qed.
-
-Lemma csum0l c : csum (0, c) = c. by []. Qed.
-
-Lemma csum0r c : csum (c, 0) = c. by rewrite /csum addn0. Qed.
-
-Lemma csum_A2B_N c : csum (ct (sA2B N c)) = (csum c).+1.
-Proof. by rewrite /csum; case: c => [[| c1]] [| c2]. Qed.
-
-Lemma csum_A2B_W c : csum (ct (sA2B W c)) = csum c.
-Proof.
-by rewrite /csum; case: c => [[| c1]] [| c2]; rewrite ?addn0 ?addn1 ?addnS.
-Qed.
-
-(* This one may be clumsy. *)
-Lemma csum_A2B_SE c :
-  csum (ct (sA2B SE c)) = if (csum c) is n.+1 then n else 0.
-Proof. by case: c => [[| c1]] [| c2] //; rewrite /csum /= addSn. Qed.
-
 (* Datas in an element of sA2B_ghost_data are ghost variables,
    computed by the program, but not exposed in the code.
    They are however crucial for stating the appropriate invariant:
@@ -301,7 +276,8 @@ Proof. by case: c => [[| c1]] [| c2] //; rewrite /csum /= addSn. Qed.
    words, but only their consequences on the respective numbers of occurrences
    of each letter in step. *)
 
-Record ghost_data := GData {ct1: nat; ct2: nat; dy1 : nat; dy2 : nat; free : nat}.
+Record ghost_data :=
+  GData {ct1: nat; ct2: nat; dy1 : nat; dy2 : nat; free : nat}.
 
 Definition mkGStore A (a : A) (c1 c2 d1 d2 f : nat) : store ghost_data A :=
   Store a (GData c1 c2 d1 d2 f).
@@ -309,6 +285,7 @@ Definition mkGStore A (a : A) (c1 c2 d1 d2 f : nat) : store ghost_data A :=
 Definition GData_alt (c : cmpt2) (d1 d2 f : nat) : ghost_data :=
   GData c.1 c.2 d1 d2 f.
 
+(* Last case is junk *)
 Definition sA2B_ghost_ (s : step) : state ghost_data step := fun g =>
 match s, g with
   |W,  GData 0 c2 d1 d2 f      =>  mkGStore  N  0    c2     d1    d2    f.+1
@@ -316,7 +293,7 @@ match s, g with
   |N,  GData c1 c2 d1 d2 f     =>  mkGStore  N c1.+1 c2     d1    d2    f
   |SE, GData c1 c2.+1 d1 d2 f  =>  mkGStore  W c1    c2     d1.+1 d2    f
   |SE, GData c1.+1 0 d1 d2 f   =>  mkGStore SE c1     0     d1    d2.+1 f
-  |SE, GData 0 0 d1 d2 f       =>  mkGStore  N  0     0     d1    d2    f (* junk *)
+  |SE, GData 0 0 d1 d2 f       =>  mkGStore  N  0     0     d1    d2    f
 end.
 
 Definition sA2B_ghost := nosimpl sA2B_ghost_.
@@ -326,16 +303,16 @@ Definition sA2B_ghost := nosimpl sA2B_ghost_.
    the fact the these coincide with the values of the (ghost-free)
    function (spipe sA2B) *)
 Lemma ghost_readA2B_ghost l ci d1i d2i fi
-      (gi := GData_alt ci d1i d2i fi)
-      (g := spipe sA2B_ghost l gi)
+      (gi := GData_alt ci d1i d2i fi) (sg := spipe sA2B_ghost l gi)
       (s := spipe sA2B l ci) :
-      [/\ (ct s).1 = ct1 (ct g), (ct s).2 = ct2 (ct g) & data s = data g].
+      [/\ (hidden s).1 = ct1 (hidden sg), (hidden s).2 = ct2 (hidden sg) &
+                                         data s = data sg].
 Proof.
-rewrite {}/g {}/s; elim/last_ind: l => [| l h ihl] //=.
-rewrite !ct_spipe_rcons !data_spipe_rcons -/readA2B.
-case: (ct (readA2B l ci)) ihl => c1 c2 /=.
+rewrite {}/sg {}/s; elim/last_ind: l => [| l h ihl] //=.
+rewrite !hidden_spipe_rcons !data_spipe_rcons -/readA2B.
+case: (hidden (readA2B l ci)) ihl => c1 c2 /=.
 set g := spipe sA2B_ghost _ _; set s := spipe sA2B _ _.
-case: (ct g) => cg1 cg2 dg1 dg2 gf /=; case=> -> -> -> {c1 c2}.
+case: (hidden g) => cg1 cg2 dg1 dg2 gf /=; case=> -> -> -> {c1 c2}.
 by case: h => //=; case: cg1 => [| cg1] //; case: cg2 => [| cg2].
 Qed.
 
@@ -345,16 +322,16 @@ Qed.
    kind of reproduce this proof outside this one to ensure we never hit this
    exceptional case... Can we do better? *)
 
-Lemma preA_rA2B_ghost_inv l gi (g := ct (spipe sA2B_ghost l gi)) :
+Lemma preA_rA2B_ghost_inv l gi (g := hidden (spipe sA2B_ghost l gi)) :
   preAword l ->
   [/\ #N l  + dy1 gi + dy2 gi + ct1 gi + ct2 gi = dy1 g + dy2 g + ct1 g + ct2 g,
         #SE l + dy1 gi + dy2 gi = dy1 g + dy2 g &
         #W l  + dy1 gi + ct2 gi + free gi = dy1 g + ct2 g + free g].
 Proof.
 rewrite {}/g; elim/last_ind: l => [| l h ihl] /= preAlh=> //.
-rewrite !ct_spipe_rcons -/readA2B.
+rewrite !hidden_spipe_rcons -/readA2B.
 have {ihl} /ihl := preA_rcons preAlh.
-move: (ct (spipe sA2B_ghost l gi)) => c [eN eSE eW].
+move: (hidden (spipe sA2B_ghost l gi)) => c [eN eSE eW].
 case: h preAlh => /preAwordP preAlh; rewrite !count_mem_rcons !eqxx /=.
 - rewrite !addSn {}eW {}eN {}eSE {preAlh}.
   by case: c => c1 c2 d1 d2 f /=; rewrite !addnS !addSn.
@@ -382,16 +359,17 @@ Lemma preA_rA2B_inv l ci d1i d2i fi
       (s := spipe sA2B l ci) :
   preAword l ->
   [/\ #N l  + d1i + d2i + ci.1 + ci.2 =
-      dy1 (ct sg) + dy2 (ct sg) + (ct s).1 + (ct s).2,
-      #SE l + d1i + d2i = dy1 (ct sg) + dy2 (ct sg) &
-      #W l  + d1i + ci.2 + free gi = dy1 (ct sg) + (ct s).2 + free (ct sg)].
+      dy1 (hidden sg) + dy2 (hidden sg) + (hidden s).1 + (hidden s).2,
+      #SE l + d1i + d2i = dy1 (hidden sg) + dy2 (hidden sg) &
+      #W l  + d1i + ci.2 + free gi =
+      dy1 (hidden sg) + (hidden s).2 + free (hidden sg)].
 Proof.
 move/(preA_rA2B_ghost_inv gi) => /=.
 by have /= [<- <- _]:= ghost_readA2B_ghost l ci d1i d2i fi.
 Qed.
 
 (* Now we can prove that the exceptional state is never reached. *)
-Lemma preA_rA2B_noex l a ci (c := ct (readA2B l ci)) :
+Lemma preA_rA2B_noex l a ci (c := hidden (readA2B l ci)) :
   preAword (rcons l a) -> [|| (c.1 != 0), (c.2 != 0) | (a != SE)].
 Proof.
 case: a; rewrite ?orbF ?orbT // -negb_and => AlSE.
