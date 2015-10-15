@@ -76,16 +76,7 @@ Canonical  step_finType    := FinType step step_finMixin.
 
 (* End of boilerplate code *)
 
-(* (* Boolean predicates characterizing each nature of step *) *)
-(* Definition is_N := pred1 N. *)
-(* Definition is_W := pred1 W. *)
-(* Definition is_SE := pred1 SE. *)
-
-(* (* Words are represented as sequences (lists) of letters *) *)
-(* Definition count_N : seq step -> nat := count is_N. *)
-(* Definition count_W : seq step -> nat := count is_W. *)
-(* Definition count_SE : seq step -> nat := count is_SE. *)
-
+(* Boolean predicates characterizing each nature of step *)
 (* (#N w) is the number of occurrences of N in word w, etc. *)
 
 Notation "#N" := (count_mem N).
@@ -288,12 +279,12 @@ Definition GData_alt (c : cmpt2) (d1 d2 f : nat) : ghost_data :=
 (* Last case is junk *)
 Definition sA2B_ghost_ (s : step) : state ghost_data step := fun g =>
 match s, g with
-  |W,  GData 0 c2 d1 d2 f      =>  mkGStore  N  0    c2     d1    d2    f.+1
-  |W,  GData c1.+1 c2 d1 d2 f  =>  mkGStore SE c1    c2.+1  d1    d2    f
-  |N,  GData c1 c2 d1 d2 f     =>  mkGStore  N c1.+1 c2     d1    d2    f
-  |SE, GData c1 c2.+1 d1 d2 f  =>  mkGStore  W c1    c2     d1.+1 d2    f
-  |SE, GData c1.+1 0 d1 d2 f   =>  mkGStore SE c1     0     d1    d2.+1 f
-  |SE, GData 0 0 d1 d2 f       =>  mkGStore  N  0     0     d1    d2    f
+  |W,  GData 0     c2    d1 d2 f  =>  mkGStore  N  0    c2     d1    d2    f.+1
+  |W,  GData c1.+1 c2    d1 d2 f  =>  mkGStore SE c1    c2.+1  d1    d2    f
+  |N,  GData c1    c2    d1 d2 f  =>  mkGStore  N c1.+1 c2     d1    d2    f
+  |SE, GData c1    c2.+1 d1 d2 f  =>  mkGStore  W c1    c2     d1.+1 d2    f
+  |SE, GData c1.+1 0     d1 d2 f  =>  mkGStore SE c1     0     d1    d2.+1 f
+  |SE, GData 0     0     d1 d2 f  =>  mkGStore  N  0     0     d1    d2    f
 end.
 
 Definition sA2B_ghost := nosimpl sA2B_ghost_.
@@ -324,9 +315,9 @@ Qed.
 
 Lemma preA_rA2B_ghost_inv l gi (g := hidden (spipe sA2B_ghost l gi)) :
   preAword l ->
-  [/\ #N l  + dy1 gi + dy2 gi + ct1 gi + ct2 gi = dy1 g + dy2 g + ct1 g + ct2 g,
+  [/\    #N l + dy1 gi + dy2 gi + ct1 gi + ct2 gi = dy1 g + dy2 g + ct1 g + ct2 g,
         #SE l + dy1 gi + dy2 gi = dy1 g + dy2 g &
-        #W l  + dy1 gi + ct2 gi + free gi = dy1 g + ct2 g + free g].
+         #W l + dy1 gi + ct2 gi + free gi = dy1 g + ct2 g + free g].
 Proof.
 rewrite {}/g; elim/last_ind: l => [| l h ihl] /= preAlh=> //.
 rewrite !hidden_spipe_rcons -/readA2B.
@@ -385,14 +376,12 @@ by rewrite -leqNgt -addnA leq_addr.
 Qed.
 
 (* And finally that the two functions (spipe sA2B) and (spipe sB2A) cancel. *)
-(* This proof script is really ugly. Let's hope that some setoid rewriting
-   will make it shrink dramatically. *)
+
 Lemma readA2BK l : preAword l ->
                (sdo x <- spipe sA2B l; spipe sB2A (rev x)) =1 sreturn (rev l).
 Proof.
 elim/last_ind: l => [| l a ihl] // preAla ci.
-rewrite (sbind_extl (spipe_rcons _ _ _)).
-rewrite sbind_comp.
+rewrite (sbind_extl (spipe_rcons _ _ _)) sbind_comp.
 have /sbind_extr -> a0 :
      (sdo b <- (sdo s1 <- (sA2B a); sreturn (rcons a0 s1)); spipe sB2A (rev b))
   =1 (sdo s1 <- (sA2B a); (sdo b <- sreturn (rcons a0 s1); spipe sB2A (rev b))).
