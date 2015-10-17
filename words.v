@@ -2,8 +2,6 @@ Require Import ssreflect ssrfun ssrbool eqtype ssrnat seq.
 Require Import choice tuple fintype finfun finset.
 Require Import bigop ssralg ssrnum poly ssrint.
 
-Require Import monad.
-
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
@@ -46,22 +44,11 @@ Definition step_of_ord (o : 'I_3) : step :=
 Lemma ord_of_stepK : cancel ord_of_step step_of_ord.
 Proof. by case. Qed.
 
-(* We still implement the eqType structure "by hand" to ensure that
-   N == N is convertible to true, S == SE to false etc. *)
-Fixpoint eqs (s1 s2 : step) : bool :=
-  match s1, s2 with
-  |N, N => true
-  |W, W => true
-  |SE, SE => true
-  |_, _ => false
-  end.
 
-Lemma eqsP : Equality.axiom eqs.
-Proof. by do 2!case; constructor. Qed.
 
 (* Starting boilerplate code *)
 
-Definition step_eqMixin := EqMixin eqsP.
+Definition step_eqMixin := CanEqMixin ord_of_stepK.
 Canonical  step_eqType  := EqType step step_eqMixin.
 
 Definition step_choiceMixin := CanChoiceMixin ord_of_stepK.
@@ -192,12 +179,9 @@ priority. *)
    value of the counter. This fold computes the tranformation of the input
    word, and propagates the resulting value of the counter. *)
 
-Definition cmpt2 := (nat * nat)%type.
+Record store (A : Type) : Type := Store {data : A; hidden : nat * nat}.
 
-Definition mkStore {A} a n1 n2 : store cmpt2 A := Store a (n1, n2).
-
-
-(* First some standard tools to manipulate such a monad. *)
+Definition mkStore {A} (a : A) (n1 n2 : nat) : store A := Store a (n1, n2).
 
 
 (* Step by step transformation of an A-word into a B-word. The two counters are
@@ -211,32 +195,65 @@ Definition mkStore {A} a n1 n2 : store cmpt2 A := Store a (n1, n2).
    - remaining occurrences of letter W are translated to N
    - the last case of the match (SE, (0, 0)) is never reached when scanning an A-word. *)
 
-Definition sA2B (s : step) : state cmpt2 step := fun c =>
+Definition sA2B (c : nat * nat) (s : step) : store step :=
   match s, c with
-    |  W, (0, c2)      =>  mkStore N 0 c2
-    |  W, (c1.+1, c2)  =>  mkStore SE c1 c2.+1
-    |  N, (c1, c2)     =>  mkStore N c1.+1 c2
-    |  SE, (c1, c2.+1) =>  mkStore W c1 c2
-    |  SE, (c1.+1, 0)  =>  mkStore SE c1 0
-    |  SE, (0, 0)      =>  mkStore N 0 0 (* junk *)
+    |  W,  (0, c2)     => mkStore N 0 c2
+    |  W,  (c1.+1, c2) => mkStore SE c1 c2.+1
+    |  N,  (c1, c2)    => mkStore N c1.+1 c2
+    |  SE, (c1, c2.+1) => mkStore W c1 c2
+    |  SE, (c1.+1, 0)  => mkStore SE c1 0
+    |  SE, (0, 0)      => mkStore N 0 0 (* junk *)
   end.
 
-Arguments sA2B s c : simpl never.
+Definition cA2B (c nextc : nat * nat) : step :=
+  let: (c1, c2) := c in
+  let: (nc1, nc2) := nc in
+
+Arguments sA2B c s : simpl never.
 
 (* Inverse transformation. *)
-Definition sB2A (s : step) : state cmpt2 step := fun c =>
+Definition sB2A (c : nat * nat) (s : step) :=
   match s, c with
-    | N, (0, c2)      => mkStore W 0 c2
+    | N,  (0, c2)      => mkStore W 0 c2
     | SE, (c1, c2.+1) => mkStore W c1.+1 c2
-    | N, (c1.+1, c2)  => mkStore N c1 c2
-    | W, (c1, c2)     => mkStore SE c1 c2.+1
+    | N,  (c1.+1, c2)  => mkStore N c1 c2
+    | W,  (c1, c2)     => mkStore SE c1 c2.+1
     | SE, (c1, 0)     => mkStore SE c1.+1 0
   end.
 
-Arguments sB2A s c : simpl never.
+Arguments sB2A c s : simpl never.
 
 (* Folding sA2B on a word from a value of the counter. *)
-Definition readA2B : seq step -> state cmpt2 (seq step) := spipe sA2B.
+
+About scanl.
+
+(* scanl : forall T1 T2 : Type, (T1 -> T2 -> T1) -> T1 -> seq T2 -> seq T1 *)
+
+Definition foo (f : nat * nat -> step -> store step)
+           (c : nat * nat) (ls : seq step) : seq (nat * nat) :=
+  scanl (fun nn s => hidden (f nn s)) c ls.
+
+Definition bar (f : nat * nat -> step -> store step)
+           (s : step) (lc : seq (nat * nat)) : seq step :=
+  scanl (fun s nn => data (sA2B nn s)) s lc.
+
+(* pairmap : forall T1 T2 : Type, (T1 -> T1 -> T2) -> T1 -> seq T1 -> seq T2 *)
+
+Definition bar c l := pairmap sB2A c (foo sA2B c l).
+
+About foo.
+
+Fixpoint my A B C (f : A -> B -> A * C) (a : A) (l : seq B) : A * seq C :=
+  match l with
+  |[::] => (a, [::])
+  |h :: tl => let: (a', c) := f a h in
+              let: (a'', l') := my f a' tl in (a'', c :: l')
+  end.
+
+
+
+
+
 (* Folding sB2A on a word from a value of the counter. *)
 Definition readB2A : seq step -> state cmpt2 (seq step) := spipe sB2A.
 
