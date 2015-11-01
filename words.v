@@ -176,86 +176,76 @@ Canonical state_subCountType := [subCountType of state].
 
 Definition sA2B (c : state) (s : step) : step * state :=
   match s, c with
-    |  W,  {|0    ; c2   |} => (N,  {|0    ; c2   |})
-    |  W,  {|c1.+1; c2   |} => (SE, {|c1   ; c2.+1|})
-    |  N,  {|c1   ; c2   |} => (N,  {|c1.+1; c2   |})
-    |  SE, {|c1   ; c2.+1|} => (W,  {|c1   ; c2   |})
-    |  SE, {|c1.+1; 0    |} => (SE, {|c1   ; 0    |})
+    |  W,  {|0    ; c2   |} => (N,  {|0    ; c2   |}) (* _ , _  *)
+    |  W,  {|c1.+1; c2   |} => (SE, {|c1   ; c2.+1|}) (* -1, +1 *)
+    |  N,  {|c1   ; c2   |} => (N,  {|c1.+1; c2   |}) (* +1, _  *)
+    |  SE, {|c1   ; c2.+1|} => (W,  {|c1   ; c2   |}) (* _ , -1 *)
+    |  SE, {|c1.+1; 0    |} => (SE, {|c1   ; 0    |}) (* -1, _  *)
     |  SE, {|0    ; 0    |} => (N,  {|0    ; 0    |}) (* junk *)
   end.
 
 Arguments sA2B c s : simpl never.
 
-(* Inverse transformation. *)
-Definition sB2A (c : state) (s : step) :=
+(* Converse transducer *)
+Definition sB2A (c : state) (s : step) : step * state :=
   match s, c with
-    | N,  {|0    ; c2   |} => (W,  {|0    ; c2   |})
-    | SE, {|c1   ; c2.+1|} => (W,  {|c1.+1; c2   |})
-    | N,  {|c1.+1; c2   |} => (N,  {|c1   ; c2   |})
-    | W,  {|c1   ; c2   |} => (SE, {|c1   ; c2.+1|})
-    | SE, {|c1   ; 0    |} => (SE, {|c1.+1; 0    |}) (* junk *)
+    | N,  {|0    ; c2   |} => (W,  {|0    ; c2   |}) (* _ , _  *)
+    | SE, {|c1   ; c2.+1|} => (W,  {|c1.+1; c2   |}) (* +1, -1 *)
+    | N,  {|c1.+1; c2   |} => (N,  {|c1   ; c2   |}) (* -1, _  *)
+    | W,  {|c1   ; c2   |} => (SE, {|c1   ; c2.+1|}) (* _ , +1 *)
+    | SE, {|c1   ; 0    |} => (SE, {|c1.+1; 0    |}) (* +1, _  *)
   end.
 
 Arguments sB2A c s : simpl never.
 
-
 Definition cA2B (ci cf : state) : step :=
   let: {|ci1; ci2|} := ci in
   let: {|cf1; cf2|} := cf in
-  if (ci == cf) then W
-  else if (ci1 == cf1.+1) && (cf2 == ci2.+1) then W
-  else if (cf1 == ci1.+1) then N
-  else if (ci2 == cf2.+1) || (ci1 == cf1.+1) then SE
-  else SE (* junk *).
+  if [&& ci1 == 0, cf1 == 0 & (ci == cf)] then N
+  else if (ci1 == cf1.+1) && (cf2 == ci2.+1) then SE
+  else if (cf1 == ci1.+1) && (ci2 == cf2) then N
+  else if (ci2 == cf2.+1) && (ci2 == 0) && (ci1 == 0) then SE
+  else N (* junk *).
 
 Definition cB2A (ci cf : state) : step :=
   let: {|ci1; ci2|} := ci in
   let: {|cf1; cf2|} := cf in
-  if (ci == cf) then N
+  if [&& ci1 == 0, cf1 == 0 & (ci2 == cf2)] then N
   else if (cf1 == ci1.+1) && (ci2 == cf2.+1) then SE
-  else if (ci1 == cf1.+1) then N
-  else if (cf2 == ci2.+1) then W
-  else SE (* junk *).
+  else if (ci1 == cf1.+1) && (ci2 == cf2) then N
+  else if (ci1 == cf1) && (cf2 == ci2.+1) then W
+  else SE.
 
 Definition noex  (s : step) (c : state) :=
   [|| (c.1 != 0%N), (c.2 != 0%N) | (s != SE)].
 
-Lemma sA2BK (c : state) (s : step) : noex s c ->
-  cA2B c (sA2B c s).2 = s.
-rewrite /cA2B /sA2B /noex.
-case: s; case: c => [] [] [| c1] [| c2] _ //=; rewrite ?eqxx ?if_same //=.
-- by rewrite eqE /= eqE /= ltn_eqF //= ltn_eqF.
-- by rewrite eqE /= eqE ltn_eqF //= ltn_eqF.
-- by rewrite eqE /= eqE /= gtn_eqF.
-- by rewrite !ifF // ?ltn_eqF // eqE /= eqE /= gtn_eqF.
-- by rewrite !ifF // ?ltn_eqF // eqE /= eqE /= eqxx gtn_eqF.
-Qed.
 
 Definition A2Bstates (c : state) (ls : seq step) : seq state :=
   scanl (fun nn s => snd (sA2B nn s)) c ls.
 
-Definition A2B_from (c : state) (ls : seq step) : seq step :=
-  pairmap cB2A c (A2Bstates c ls).
-
-Definition A2B : seq step -> seq step := A2B_from {|0; 0|}.
+Definition A2B (ls : seq step) : seq step :=
+  if rev ({|0; 0|} :: A2Bstates {|0; 0|} ls) is c :: lc
+  then rev (pairmap cB2A c lc)
+  else [::].
 
 Definition B2Astates (c : state) (ls : seq step) : seq state :=
   scanl (fun nn s => snd (sB2A nn s)) c ls.
 
-Definition B2A_from (c : state) (ls : seq step) : seq step :=
-  pairmap cA2B c (B2Astates c ls).
+Definition B2A (ls : seq step) : seq step :=
+  if rev ({|0; 0|} :: B2Astates {|0; 0|} ls) is c :: lc
+  then rev (pairmap cA2B c lc)
+  else [::].
 
-Definition B2A : seq step -> seq step := B2A_from {|0; 0|}.
-
-Theorem B2AK : {in preAword, cancel A2B B2A}.
-Proof.
-Admitted.
+Eval compute in A2B [:: N; W; SE]. (* [:: N; SE; W] *)
+Eval compute in A2B [:: N; SE; W]. (* [:: N; SE; N] *)
+Eval compute in A2B [:: W; N; SE]. (* [:: N; N; SE] *)
 
 
 (* Section Scan. *)
 
 (* Variables (T1 : Type) (x1 : T1) (T2 : Type) (x2 : T2). *)
 (* Variables (f : T1 -> T1 -> T2) (g : T1 -> T2 -> T1). *)
+
 (* Variables (D : pred T1). *)
 
 (* Lemma in_scanlK : *)
