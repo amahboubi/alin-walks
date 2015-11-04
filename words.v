@@ -174,7 +174,7 @@ Definition state_countMixin := [countMixin of state by <:].
 Canonical state_countType := Eval hnf in CountType state state_countMixin.
 Canonical state_subCountType := [subCountType of state].
 
-Definition sA2B (c : state) (s : step) : step * state :=
+Definition tA2B (c : state) (s : step) : step * state :=
   match s, c with
     |  W,  {|0    ; c2   |} => (N,  {|0    ; c2   |}) (* _ , _  *)
     |  W,  {|c1.+1; c2   |} => (SE, {|c1   ; c2.+1|}) (* -1, +1 *)
@@ -184,10 +184,20 @@ Definition sA2B (c : state) (s : step) : step * state :=
     |  SE, {|0    ; 0    |} => (N,  {|0    ; 0    |}) (* junk *)
   end.
 
-Arguments sA2B c s : simpl never.
+Arguments tA2B c s : simpl never.
+
+Definition cA2B (cf ci : state) : step :=
+  let: {|ci1; ci2|} := ci in
+  let: {|cf1; cf2|} := cf in
+  if [&& ci1 == 0, cf1 == 0 & (ci2 == cf2)] then W
+  else if (ci1 == cf1.+1) && (cf2 == ci2.+1) then W
+  else if (cf1 == ci1.+1) && (ci2 == cf2) then N
+   else if (ci2 == cf2.+1) && (ci2 == cf2) then SE
+  else if (ci1 == cf1.+1) && (ci2 == 0) && (cf2 == 0) then SE
+  else SE (* junk *).
 
 (* Converse transducer *)
-Definition sB2A (c : state) (s : step) : step * state :=
+Definition tB2A (c : state) (s : step) : step * state :=
   match s, c with
     | N,  {|0    ; c2   |} => (W,  {|0    ; c2   |}) (* _ , _  *)
     | SE, {|c1   ; c2.+1|} => (W,  {|c1.+1; c2   |}) (* +1, -1 *)
@@ -196,18 +206,9 @@ Definition sB2A (c : state) (s : step) : step * state :=
     | SE, {|c1   ; 0    |} => (SE, {|c1.+1; 0    |}) (* +1, _  *)
   end.
 
-Arguments sB2A c s : simpl never.
+Arguments tB2A c s : simpl never.
 
-Definition cA2B (ci cf : state) : step :=
-  let: {|ci1; ci2|} := ci in
-  let: {|cf1; cf2|} := cf in
-  if [&& ci1 == 0, cf1 == 0 & (ci == cf)] then N
-  else if (ci1 == cf1.+1) && (cf2 == ci2.+1) then SE
-  else if (cf1 == ci1.+1) && (ci2 == cf2) then N
-  else if (ci2 == cf2.+1) && (ci2 == 0) && (ci1 == 0) then SE
-  else N (* junk *).
-
-Definition cB2A (ci cf : state) : step :=
+Definition cB2A (cf ci : state) : step :=
   let: {|ci1; ci2|} := ci in
   let: {|cf1; cf2|} := cf in
   if [&& ci1 == 0, cf1 == 0 & (ci2 == cf2)] then N
@@ -219,27 +220,38 @@ Definition cB2A (ci cf : state) : step :=
 Definition noex  (s : step) (c : state) :=
   [|| (c.1 != 0%N), (c.2 != 0%N) | (s != SE)].
 
+Definition sA2B nn s := snd (tA2B nn s).
+
+Definition sB2A nn s := snd (tB2A nn s).
 
 Definition A2Bstates (c : state) (ls : seq step) : seq state :=
-  scanl (fun nn s => snd (sA2B nn s)) c ls.
+  scanl sA2B c ls.
 
-Definition A2B (ls : seq step) : seq step :=
-  if rev ({|0; 0|} :: A2Bstates {|0; 0|} ls) is c :: lc
-  then rev (pairmap cB2A c lc)
-  else [::].
+Definition A2B_from (c : state) (ls : seq step) : seq step :=
+  pairmap cB2A c (A2Bstates c ls).
 
-Definition B2Astates (c : state) (ls : seq step) : seq state :=
-  scanl (fun nn s => snd (sB2A nn s)) c ls.
-
-Definition B2A (ls : seq step) : seq step :=
-  if rev ({|0; 0|} :: B2Astates {|0; 0|} ls) is c :: lc
-  then rev (pairmap cA2B c lc)
-  else [::].
+Definition A2B := A2B_from {|0; 0|}.
 
 Eval compute in A2B [:: N; W; SE]. (* [:: N; SE; W] *)
 Eval compute in A2B [:: N; SE; W]. (* [:: N; SE; N] *)
 Eval compute in A2B [:: W; N; SE]. (* [:: N; N; SE] *)
 
+
+Definition B2Astates  (c : state) (ls : seq step) : seq state :=
+  scanl sB2A c ls.
+
+Definition B2A_from (c : state) (ls : seq step) : seq step :=
+  pairmap cA2B c (B2Astates c ls).
+
+Definition B2A (ls : seq step) := rev (B2A_from {|0; 0|} (rev ls)).
+
+Eval compute in B2A [:: N; SE; W]. (* [:: N; W; SE] *)
+Eval compute in B2A [:: N; SE; N]. (* [:: N; SE; W] *)
+Eval compute in B2A [:: N; N; SE]. (* [:: W; N; SE] *)
+
+Theorem B2AK : {in preAword, cancel A2B B2A}.
+Proof.
+Admitted.
 
 (* Section Scan. *)
 
