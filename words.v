@@ -103,11 +103,13 @@ apply: (iffP forallP) => h n //; case: (ltnP n (size w).+1) => [ltnsl | /ltnW ?]
 by have := h (ord_max); rewrite take_size take_oversize.
 Qed.
 
-Lemma preA_rcons w a : preAword (rcons w a) -> preAword w.
+Lemma preA_rcons a w : (rcons w a) \in preAword  -> w \in preAword.
 Proof.
 move/preAwordP=> preAwordla; apply/forallP=> [] [n hn] /=.
 by move: (preAwordla n); rewrite -cats1 takel_cat.
 Qed.
+
+Arguments preA_rcons a {w} _.
 
 Definition Aword (w : seq step) : bool :=
   [&& (preAword w), #N w == #SE w & #SE w == #W w].
@@ -116,7 +118,7 @@ Lemma AwordP w :
   reflect [/\ (preAword w), #N w = #SE w & #SE w = #W w] (Aword w).
 Proof. by apply: (iffP and3P); case=> preAw /eqP-> /eqP->. Qed.
 
-Lemma ApreAword l : Aword l -> preAword l. Proof. by case/and3P. Qed.
+Lemma ApreAword l : l \in Aword -> l \in preAword. Proof. by case/and3P. Qed.
 
 
 (* We consider a family B of words on alphabet step. A word w is in B iff:
@@ -186,6 +188,8 @@ Definition tA2B (c : state) (s : step) : step * state :=
 
 Arguments tA2B c s : simpl never.
 
+Definition sA2B nn s := snd (tA2B nn s).
+
 Definition cA2B (cf ci : state) : step :=
   let: {|ci1; ci2|} := ci in
   let: {|cf1; cf2|} := cf in
@@ -208,6 +212,8 @@ Definition tB2A (c : state) (s : step) : step * state :=
 
 Arguments tB2A c s : simpl never.
 
+Definition sB2A nn s := snd (tB2A nn s).
+
 Definition cB2A (cf ci : state) : step :=
   let: {|ci1; ci2|} := ci in
   let: {|cf1; cf2|} := cf in
@@ -217,12 +223,6 @@ Definition cB2A (cf ci : state) : step :=
   else if (ci1 == cf1) && (cf2 == ci2.+1) then W
   else SE.
 
-Definition noex  (s : step) (c : state) :=
-  [|| (c.1 != 0%N), (c.2 != 0%N) | (s != SE)].
-
-Definition sA2B nn s := snd (tA2B nn s).
-
-Definition sB2A nn s := snd (tB2A nn s).
 
 Definition A2Bstates (c : state) (ls : seq step) : seq state :=
   scanl sA2B c ls.
@@ -249,9 +249,76 @@ Eval compute in B2A [:: N; SE; W]. (* [:: N; W; SE] *)
 Eval compute in B2A [:: N; SE; N]. (* [:: N; SE; W] *)
 Eval compute in B2A [:: N; N; SE]. (* [:: W; N; SE] *)
 
-Theorem B2AK : {in preAword, cancel A2B B2A}.
+Definition noex  (s : step) (c : state) :=
+  [|| (c.1 != 0%N), (c.2 != 0%N) | (s != SE)].
+
+
+(* Begin: This should go to the MathComp library... *)
+Section Scan.
+
+Variables (T1 : Type) (x1 : T1) (T2 : Type) (x2 : T2).
+Variables (f : T1 -> T1 -> T2) (g : T1 -> T2 -> T1).
+
+Lemma last_scanl s : last x1 (scanl g x1 s) = foldl g x1 s.
 Proof.
-Admitted.
+case: s => [| a s] //=.
+rewrite (last_nth (g x1 a)) size_scanl -/(scanl g x1 (a :: s)) nth_scanl //.
+by rewrite -[_.+1]/(size (a :: s)) take_size.
+Qed.
+
+End Scan.
+
+(* End: This should go to the MathComp library... *)
+
+Lemma sB2A_round c h : sB2A (sA2B c h) (cB2A c (sA2B c h)) = c.
+Proof.
+by case: c => [] [] [|?] [|?]; case: h => //=; rewrite ?eqxx ?andbF //= ltn_eqF.
+Qed.
+
+Lemma cA2B_round d h : noex h d ->
+  cA2B (sA2B d h) (sB2A (sA2B d h) (cB2A d (sA2B d h))) = h.
+Proof.
+case: d => [] [] [|c1] [|c2]; case: h => //= _;
+  rewrite ?eqxx /sA2B /tA2B /= ?eqxx ?andbF
+                /sB2A /tB2A /= ?eqxx ?andbF // ltn_eqF //=.
+- by rewrite eq_sym ltn_eqF // andbF.
+- by rewrite andbF ltn_eqF //= if_same.
+- by rewrite ltn_eqF // andbF /= !eqxx.
+- by rewrite ltn_eqF //= if_same.
+Qed.
+
+Section FirstStep.
+
+(* We leave as (temporary) hypotheses the facts that requires introducing
+   ghost variables: *)
+
+Hypothesis preA_noex : forall l h c,
+   rcons l h \in preAword -> noex h (foldl sA2B c l).
+
+Lemma revA2B_fromK l c : l \in preAword ->
+    rev (B2A_from (foldl sA2B c l) (rev (A2B_from c l))) = l.
+Proof.
+elim/last_ind: l c => [| l h ihl c pAlh] //=.
+set cf := foldl _ _ _.
+rewrite -cats1 /A2B_from /A2Bstates scanl_cat pairmap_cat rev_cat /=.
+set s := cB2A _ _.
+rewrite -/(A2B_from c l) /B2A_from /= rev_cons cats1; congr rcons.
+  suff {ihl} -> : sB2A cf s = foldl sA2B c l by apply/ihl/(preA_rcons h).
+  rewrite {}/cf {}/s last_scanl -cats1 foldl_cat /=; exact: sB2A_round.
+rewrite {}/cf {}/s {ihl} last_scanl -cats1 foldl_cat /=; apply: cA2B_round.
+exact: preA_noex.
+Qed.
+
+Hypothesis A_final_state : forall l,
+  l \in Aword -> foldl sA2B {|0; 0|} l = {|0; 0|}.
+
+Lemma A2BK : {in Aword, cancel A2B B2A}.
+Proof.
+move=> l /= Al; rewrite /B2A -(A_final_state Al); apply: revA2B_fromK.
+exact: ApreAword.
+Qed.
+
+End FirstStep.
 
 (* Section Scan. *)
 
