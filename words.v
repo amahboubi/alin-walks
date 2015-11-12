@@ -1,9 +1,13 @@
 Require Import ssreflect ssrfun ssrbool eqtype ssrnat seq.
 Require Import choice tuple fintype (* finfun finset *).
 
+Require Import extra_seq.
+
+
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
+
 
 (* Type step is the three-letter alphabet of the words we want to count.
    The names of the letters reminds how they will be interpreted as
@@ -75,13 +79,6 @@ elim: w => // [[]] l /= <-. rewrite !add0n.
 - by rewrite [_ + (1 + _)]addnCA add1n.
 Qed.
 
-Lemma count_mem_rcons {T : eqType} (t : T) (w : seq T) (a : T) :
-  count_mem t (rcons w a) =
-  if (a == t) then (count_mem t w).+1 else count_mem t w.
-Proof.
-by rewrite -cats1 count_cat /=; case: ifP=> _; rewrite ?addn0 ?addn1.
-Qed.
-
 (* We consider a family A of words on alphabet step. A word w is in A iff:
    - for any prefix p of w, #SE p <= #N p
    - #N w = #SE w = #W w
@@ -122,43 +119,43 @@ Lemma ApAword l : l \in Aword -> l \in pAword. Proof. by case/and3P. Qed.
 
 (* We consider a family B of words on alphabet step. A word w is in B iff:
    - for any prefix p of w, #W p <= #SE p <= #N p
-   -  #SE w - #W w = #N w - %SE w
+   - #SE w - #W w = #N w - #SE w
   Intuitively (we do not verify this formally), words in B can be generated
   by taking:
    - a Dyck word d1 on (N, SEW) of lenght 3*k1 (the closing parenthesis is the
    concatenation of letters SE and W);
    - shuffled with a Dyck word d2 on (N, SE) of length 2*k2
-    - with k2 letters N randomly inserted in the resulting entanglement of d1
+   - with k2 letters N randomly inserted in the resulting entanglement of d1
   and d2.
 *)
 
-Definition preBword (w : seq step) : bool :=
+Definition pBword (w : seq step) : bool :=
   [forall n : 'I_(size w).+1, #W (take n w) <= #SE (take n w) <= #N (take n w)].
 
-Lemma preBwordP w :
+Lemma pBwordP w :
   reflect (forall n : nat, #W (take n w) <= #SE (take n w) <= #N (take n w))
-          (preBword w).
+          (pBword w).
 Proof.
 apply: (iffP forallP) => h n //; case: (ltnP n (size w).+1) => [ltnsl | /ltnW ?].
   by have := h (Ordinal ltnsl).
 by have := h (ord_max);  rewrite take_size take_oversize.
 Qed.
 
-Lemma preBword_rcons l a : (rcons l a) \in preBword  -> preBword l.
+Lemma pBword_rcons l a : (rcons l a) \in pBword  -> pBword l.
 Proof.
-move/preBwordP=> preBwordla; apply/forallP=> [] [n hn] /=.
-by move: (preBwordla n); rewrite -cats1 takel_cat.
+move/pBwordP=> pBwordla; apply/forallP=> [] [n hn] /=.
+by move: (pBwordla n); rewrite -cats1 takel_cat.
 Qed.
 
 Definition Bword (w : seq step) : bool :=
-  [&& (w \in preBword) & #SE w - #W w == #N w - #SE w].
+  [&& (w \in pBword) & #SE w - #W w == #N w - #SE w].
 
 Lemma BwordP (w : seq step) :
-  reflect (w \in preBword /\ #SE w - #W w = #N w - #SE w) (w \in Bword).
+  reflect (w \in pBword /\ #SE w - #W w = #N w - #SE w) (w \in Bword).
 Proof.
 Proof. by apply: (iffP andP); case=> pAw /eqP->. Qed.
 
-Lemma BpreBword l : l \in Bword -> l \in preBword. Proof. by case/andP. Qed.
+Lemma BpBword l : l \in Bword -> l \in pBword. Proof. by case/andP. Qed.
 
 (* We prove that for a given n, there are as many words of length n
    in family A and in family B by constructing a bijection from A to B. *)
@@ -228,8 +225,7 @@ Definition cB2A (cf ci : state) : step :=
   else SE.
 
 
-Definition A2Bstates (c : state) (ls : seq step) : seq state :=
-  scanl sA2B c ls.
+Definition A2Bstates (c : state) (ls : seq step) : seq state := scanl sA2B c ls.
 
 Definition A2B_from (c : state) (ls : seq step) : seq step :=
   pairmap cB2A c (A2Bstates c ls).
@@ -257,54 +253,6 @@ Definition noex  (s : step) (c : state) :=
   [|| (c.1 != 0%N), (c.2 != 0%N) | (s != SE)].
 
 
-(* Begin: This should go to the MathComp library... *)
-Section Scan.
-
-Variables (T1 : Type) (x1 : T1) (T2 : Type) (x2 : T2).
-Variables (f : T1 -> T1 -> T2) (g : T1 -> T2 -> T1).
-
-Lemma last_scanl s : last x1 (scanl g x1 s) = foldl g x1 s.
-Proof.
-case: s => [| a s] //=.
-rewrite (last_nth (g x1 a)) size_scanl -/(scanl g x1 (a :: s)) nth_scanl //.
-by rewrite -[_.+1]/(size (a :: s)) take_size.
-Qed.
-
-Lemma scanl_rcons s t :
-  scanl g x1 (rcons s t) = rcons (scanl g x1 s) (foldl g x1 (rcons s t)).
-Proof. by rewrite -cats1 scanl_cat /= foldl_cat cats1. Qed.
-
-Lemma foldl_rcons s t :
-  foldl g x1 (rcons s t) = g (foldl g x1 s) t.
-Proof. by rewrite -cats1 foldl_cat. Qed.
-
-Lemma take_scanl n s : take n (scanl g x1 s) = scanl g x1 (take n s).
-Proof.
-rewrite -[in LHS](cat_take_drop n s) scanl_cat; case: (ltnP n (size s))=> hssn.
-  rewrite takel_cat; last by rewrite size_scanl size_take hssn.
-  by rewrite take_oversize // size_scanl size_take hssn.
-by rewrite take_cat size_scanl size_take !ltnNge !hssn drop_oversize //= cats0.
-Qed.
-
-Lemma take_paimap n s : take n (pairmap f x1 s) = pairmap f x1 (take n s).
-Proof.
-rewrite -[in LHS](cat_take_drop n s) pairmap_cat; case: (ltnP n (size s))=> hssn.
-  rewrite takel_cat; last by rewrite size_pairmap size_take hssn.
-  by rewrite take_oversize // size_pairmap size_take hssn.
-by rewrite take_cat size_pairmap size_take !ltnNge !hssn drop_oversize //= cats0.
-Qed.
-
-Lemma take_take n m (s : seq T1) : take n (take m s) = take (minn n m) s.
-Proof.
-rewrite /minn; case: ltnP=> [ltnm | lemn]; last first.
-  by rewrite take_oversize // size_take; case: ltnP=> // /leq_trans; apply.
-rewrite -[in RHS](cat_take_drop m s) take_cat size_take.
-case: (ltnP m _) => // lessm; rewrite ?ltnm //; case: ltnP => // leqssn.
-rewrite [LHS]take_oversize; first by rewrite drop_oversize ?cats0.
-by rewrite size_take? ltnNge lessm.
-Qed.
-
-End Scan.
 
 (* End: This should go to the MathComp library... *)
 
@@ -393,7 +341,7 @@ Qed.
 Hypothesis B_final_state : forall l,
   l \in Bword -> foldl sB2A {|0; 0|} (rev l) = {|0; 0|}.
 
-Lemma B2AK : {in Bword, cancel B2A A2B}.
+Lemma B2AK_ : {in Bword, cancel B2A A2B}.
 Proof.
 by move=> l /= Bl; rewrite /A2B -(B_final_state Bl) /B2A revB2A_fromK ?revK.
 Qed.
@@ -423,8 +371,8 @@ match s, g with
   |W,  GState c1.+1 c2    d1 d2 f  =>  (SE, GState c1    c2.+1  d1    d2    f   )
   |N,  GState c1    c2    d1 d2 f  =>  (N,  GState c1.+1 c2     d1    d2    f   )
   |SE, GState c1    c2.+1 d1 d2 f  =>  (W,  GState c1    c2     d1.+1 d2    f   )
-  |SE, GState c1.+1 0     d1 d2 f  =>  (SE, GState c1     0     d1    d2.+1 f   )
-  |SE, GState 0     0     d1 d2 f  =>  (N,  GState  0     0     d1    d2    f   )
+  |SE, GState c1.+1 0     d1 d2 f  =>  (SE, GState c1    0      d1    d2.+1 f   )
+  |SE, GState 0     0     d1 d2 f  =>  (N,  GState 0     0      d1    d2    f   )
 end.
 
 Definition tA2B_ghost := nosimpl tA2B_ghost_.
@@ -599,11 +547,11 @@ case: h noex pAlh => [_ | _ | nx] /pAwordP pAlh; rewrite !count_cat /= addn0.
 Qed.
 
 Lemma take_A2B n l : A2B (take n l) = take n (A2B l).
-Proof. by rewrite /A2B /A2B_from /A2Bstates -take_scanl -take_paimap. Qed.
+Proof. by rewrite /A2B /A2B_from /A2Bstates -take_scanl -take_pairmap. Qed.
 
-Lemma preB_A2B_pA l : l \in pAword -> A2B l \in preBword.
+Lemma pB_A2B_pA l : l \in pAword -> A2B l \in pBword.
 Proof.
-move/pAwordP=> pAl; apply/preBwordP=> n.
+move/pAwordP=> pAl; apply/pBwordP=> n.
 have : take n l \in pAword by apply/pAwordP=> m; rewrite take_take.
 pose gi := GState 0 0 0 0 0; move/(pA_A2B_ghost_inv gi) => /=.
 rewrite !addn0 -[X in A2B_ghost_from X _]/(GState_alt {|0; 0|} 0 0 0).
@@ -614,7 +562,7 @@ Qed.
 
 Theorem B_A2B_A l : l \in Aword -> A2B l \in Bword.
 case/AwordP => pAl eNSE eSEW.
-rewrite -topredE /= /Bword preB_A2B_pA //=.
+rewrite -topredE /= /Bword pB_A2B_pA //=.
 pose gi := GState 0 0 0 0 0; pose rl := foldl sA2B_ghost gi l.
 have /and3P [/eqP ec1 /eqP ec2 /eqP edf]:
   [&& ct1 rl == 0, ct2 rl == 0 & dy2 rl == free rl].
@@ -653,3 +601,6 @@ have imB2A w : Btuple w -> Atuple (B2At w). admit.
 have /can_in_inj /image_injP : {in Atuple, cancel A2Bt B2At}. admit.
 have /can_in_inj /image_injP : {in Atuple, cancel A2Bt B2At}. admit.
 (* we still need to prove this one! *)
+Admitted.
+
+End CardinalsEquality.
