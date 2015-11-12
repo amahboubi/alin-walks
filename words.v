@@ -313,6 +313,15 @@ Proof.
 by case: c => [] [] [|?] [|?]; case: h => //=; rewrite ?eqxx ?andbF //= ltn_eqF.
 Qed.
 
+Lemma sA2B_round c h : sA2B (sB2A c h) (cA2B c (sB2A c h)) = c.
+Proof.
+case: c => [] [] [|?] [|?]; case: h => //=; rewrite ?eqxx ?andbF //=.
+- by rewrite eq_sym ltn_eqF.
+- by rewrite ltn_eqF.
+- by rewrite ltn_eqF.
+- by rewrite ltn_eqF //= eq_sym ltn_eqF.
+Qed.
+
 Lemma cA2B_round d h : noex h d ->
   cA2B (sA2B d h) (sB2A (sA2B d h) (cB2A d (sA2B d h))) = h.
 Proof.
@@ -325,10 +334,23 @@ case: d => [] [] [|c1] [|c2]; case: h => //= _;
 - by rewrite ltn_eqF //= if_same.
 Qed.
 
+Lemma cB2A_round d h :
+  cB2A (sB2A d h) (sA2B (sB2A d h) (cA2B d (sB2A d h))) = h.
+Proof.
+case: d => [] [] [|c1] [|c2]; case: h => //=;
+  rewrite ?eqxx /sA2B /tA2B /= ?eqxx ?andbF
+                /sB2A /tB2A /= ?eqxx ?andbF //.
+- by rewrite eq_sym ltn_eqF //= ltn_eqF // eqxx.
+- by rewrite ltn_eqF //= !eqxx !ltn_eqF.
+- by rewrite ltn_eqF //= !eqxx /= !ltn_eqF.
+- by rewrite ltn_eqF //= if_same /= !eqxx !ltn_eqF.
+Qed.
+
 Section FirstStep.
 
 (* We leave as (temporary) hypotheses the facts that requires introducing
    ghost variables: *)
+
 
 Hypothesis pA_noex : forall l h c,
    rcons l h \in pAword -> noex h (foldl sA2B c l).
@@ -346,6 +368,19 @@ rewrite -/(A2B_from c l) /B2A_from /= rev_cons; congr rcons.
 rewrite {}/cf {}/s foldl_rcons last_scanl; apply: cA2B_round; exact: pA_noex.
 Qed.
 
+Lemma revB2A_fromK l c :
+    A2B_from (foldl sB2A c l) (rev (B2A_from c l)) = rev l.
+Proof.
+elim/last_ind: l c => [| l h ihl c] //=.
+set cf := foldl _ _ _.
+rewrite /B2A_from /B2Astates scanl_rcons -cats1 pairmap_cat rev_cat /=.
+set s := cA2B (last _ _)  _.
+rewrite -/(B2A_from c l) /A2B_from /= rev_rcons; congr cons; last first.
+  suff {ihl} -> : sA2B cf s = foldl sB2A c l by apply/ihl.
+  rewrite {}/cf {}/s last_scanl foldl_rcons; exact: sA2B_round.
+by rewrite {}/cf {}/s foldl_rcons last_scanl; apply: cB2A_round.
+Qed.
+
 Hypothesis A_final_state : forall l,
   l \in Aword -> foldl sA2B {|0; 0|} l = {|0; 0|}.
 
@@ -355,7 +390,16 @@ move=> l /= Al; rewrite /B2A -(A_final_state Al); apply: revA2B_fromK.
 exact: ApAword.
 Qed.
 
+Hypothesis B_final_state : forall l,
+  l \in Bword -> foldl sB2A {|0; 0|} (rev l) = {|0; 0|}.
+
+Lemma B2AK : {in Bword, cancel B2A A2B}.
+Proof.
+by move=> l /= Bl; rewrite /A2B -(B_final_state Bl) /B2A revB2A_fromK ?revK.
+Qed.
+
 End FirstStep.
+
 
 (* Now we prove the two remaining facts about words in A, plus the important
   missing property of A2B : that its image is included in Bword *)
@@ -582,3 +626,30 @@ move/(pA_A2B_ghost_inv gi): pAl => /=; rewrite -/rl ec1 ec2 edf !addn0.
 rewrite -[X in A2B_ghost_from X _]/(GState_alt {|0; 0|} 0 0 0) ghost_A2B_ghost.
 by case=> -> -> ->; rewrite addKn -{2}[dy1 _ + _]addn0 subnDl subn0.
 Qed.
+
+Lemma sizeA2B w : size (A2B w) = size w.
+Proof. by rewrite /A2B /A2B_from /A2Bstates size_pairmap size_scanl. Qed.
+
+Lemma sizeB2A w : size (B2A w) = size w.
+Proof.
+by rewrite /B2A /B2A_from /B2Astates size_rev size_pairmap size_scanl size_rev.
+Qed.
+
+Section CardinalsEquality.
+
+Variable n : nat.
+
+Definition Atuple : pred (n.-tuple step) := [pred w : n.-tuple step | Aword w].
+
+Definition Btuple : pred (n.-tuple step) := [pred w : n.-tuple step | Bword w].
+
+Corollary AB_eq_card : #|Atuple| = #|Btuple|.
+Proof.
+have sizeA2Bt (w : n.-tuple step) : size (A2B w) == n by rewrite sizeA2B size_tuple.
+have sizeB2At (w : n.-tuple step) : size (B2A w) == n by rewrite sizeB2A size_tuple.
+pose A2Bt (w : n.-tuple step) : n.-tuple step := Tuple (sizeA2Bt w).
+pose B2At (w : n.-tuple step) : n.-tuple step := Tuple (sizeB2At w).
+have imB2A w : Btuple w -> Atuple (B2At w). admit.
+have /can_in_inj /image_injP : {in Atuple, cancel A2Bt B2At}. admit.
+have /can_in_inj /image_injP : {in Atuple, cancel A2Bt B2At}. admit.
+(* we still need to prove this one! *)
