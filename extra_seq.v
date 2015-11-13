@@ -1,6 +1,5 @@
 Require Import ssreflect ssrfun ssrbool eqtype ssrnat seq.
 
-
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
