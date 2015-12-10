@@ -491,17 +491,28 @@ Qed.
 
 End SufficientConditionsForCancel.
 
-
-Lemma A2B_rcons w l : A2B (rcons w l) =
-  A2B w ++ [:: A2Bout (foldl tA2B {|0; 0|} w) (foldl tA2B {|0; 0|} (rcons w l))].
-Proof.
-rewrite /= scanl_rcons -cats1 pairmap_cat -[pairmap A2Bout {|0; 0|} _]/(A2B w).
-by rewrite last_scanl /= cats1.
-Qed.
-
 Lemma take_A2B n l : A2B (take n l) = take n (A2B l).
 Proof. by rewrite /A2B /A2B_from /A2Bstates -take_scanl -take_pairmap. Qed.
 
+Lemma A2B_from_rcons s w l : A2B_from s (rcons w l) =
+  rcons (A2B_from s w) (A2Bout (foldl tA2B s w) (tA2B (foldl tA2B s w) l)).
+Proof.
+by rewrite /= scanl_rcons -cats1 pairmap_cat /= last_scanl foldl_rcons cats1.
+Qed.
+
+Lemma A2B_rcons  w l (s := foldl tA2B {|0; 0|} w) :
+  A2B (rcons w l) = rcons (A2B w) (A2Bout s (tA2B s l)).
+Proof. by rewrite /A2B A2B_from_rcons. Qed.
+
+Lemma B2A_from_rcons s w l : B2A_from s (rcons w l) =
+  rcons (B2A_from s w) (B2Aout (foldl tB2A s w) (tB2A (foldl tB2A s w) l)).
+Proof.
+by rewrite /= scanl_rcons -cats1 pairmap_cat /= last_scanl foldl_rcons cats1.
+Qed.
+
+Lemma B2A_cons w l (s := foldl tB2A {|0; 0|} (rev w)) :
+  B2A (l :: w) = (B2Aout s (tB2A s l)) :: (B2A w).
+Proof. by rewrite /B2A rev_cons B2A_from_rcons rev_rcons. Qed.
 
 (* Now we prove the two remaining facts about words in A, plus the important
   missing property of A2B : that its image is included in Bword *)
@@ -530,6 +541,78 @@ end.
 
 Definition gtA2B := nosimpl gtA2B_.
 
+(* Invariant for gtA2B. By brute force case analysis excepy for the only *)
+(* interesting case of the (tail) induction on l is, i.e. when it ends with Se:*)
+(* in this case the hypothesis (pAword l) forbids ct1 c = ct2 c = 0. We *)
+(* need to kind of reproduce this proof outside this one to ensure we never hit*)
+(* this  exceptional case... Can we do better? *)
+
+Lemma pA_gtA2B_inv w gi (g := foldl gtA2B gi w) :
+  w \in pAword ->
+  [/\
+#N  w + dy1 gi + dy2 gi + ct1 gi + ct2 gi =
+        dy1 g  + dy2 g  + ct1 g  + ct2 g   ,
+#Se w + dy1 gi + dy2 gi                   =
+        dy1 g  + dy2 g                      &
+#W  w + dy1 gi + ct2 gi + free gi         =
+        dy1 g  + ct2 g  + free g
+].
+Proof.
+rewrite {}/g; elim/last_ind: w => [| w l ihw] /= pAwl=> //; rewrite !foldl_rcons.
+have {ihw} /ihw := pA_rcons _ pAwl.
+move: (foldl gtA2B gi w) => c [eN eSe eW].
+case: l pAwl => pAwl; rewrite !count_mem_rcons !eqxx /=.
+- by rewrite !addSn {}eW {}eN {}eSe; case: c => * /=; split; ring.
+- by rewrite !addSn {}eW {}eN {}eSe; case: c => [] [|c1] * /=; split; ring.
+- suff {eW} : ct1 c + ct2 c != 0.
+    rewrite !addSn {}eW {}eN {}eSe; case: c => [] [|?] [|?] * //=; split; ring.
+  have {pAwl} : #Se w < #N w := pA_rconsSe pAwl.
+  apply: contraL; rewrite addn_eq0; case/andP=> /eqP e1 /eqP e2.
+  suff /eqP-> : #Se w == #N w + (ct1 gi + ct2 gi) by rewrite -leqNgt leq_addr.
+  by rewrite -(eqn_add2r (dy1 gi + dy2 gi)) addnAC !addnA eN eSe e1 e2 !addn0.
+Qed.
+
+Definition gnoex (l : letter) (g : gstate) :=
+   [|| ct1 g != 0, ct2 g != 0 | l != Se].
+
+Lemma gnoex_noex l g : gnoex l g = noex l (state_of_gstate g).
+Proof. by case: g. Qed.
+
+Lemma pA_gnoex w l g : rcons w l \in pAword -> gnoex l (foldl gtA2B g w).
+Proof.
+rewrite /gnoex; case: l; rewrite ?orbT // orbF -negb_and => pA.
+have /(pA_gtA2B_inv g) := pA_rcons _ pA.
+move: (foldl _ _ _) => [] c1 c2 d1 d2 f /= [] eN eSe _.
+apply: contraL (pA_rconsSe pA); case/andP => /eqP e1 /eqP e2.
+suff /eqP-> : #Se w == #N w + (ct1 g + ct2 g) by rewrite -leqNgt leq_addr.
+by rewrite -(eqn_add2r (dy1 g + dy2 g)) addnAC !addnA eN eSe e1 e2 !addn0.
+Qed.
+
+Lemma state_of_foldl_gtA2B s d1 d2 f w (g := mkGState s d1 d2 f) :
+  state_of_gstate (foldl gtA2B g w) = foldl tA2B s w.
+Proof.
+have -> : s = state_of_gstate g by rewrite {}/g; case: s => [] [].
+elim: w g => [|h w ihw] //= g; rewrite {}ihw; congr foldl.
+by case: g=> c1 c2* {w} /=; case: h => //=; case: c1 => * //; case: c2 => *.
+Qed.
+
+Lemma pA_noex  w l s : rcons w l \in pAword -> noex l (foldl tA2B s w).
+Proof.
+move=> ?; rewrite -(state_of_foldl_gtA2B _ 0 0 0) -gnoex_noex; exact: pA_gnoex.
+Qed.
+
+Lemma A_final_state l : l \in Aword -> foldl tA2B {|0; 0|} l = {|0; 0|}.
+Proof.
+case/AwordP=> /(pA_gtA2B_inv g0); rewrite -(state_of_foldl_gtA2B _ 0 0 0) /=.
+rewrite !addn0; move: (foldl _ _ _) => [] c1 c2 d1 d2 f /= [-> -> ->].
+rewrite -addnA addnC; move/(canRL (addnK _)); rewrite subnn.
+by case: c1 => [|?] //; case: c2.
+Qed.
+
+Theorem A2BK : {in Aword, cancel A2B B2A}.
+Proof. apply: A2BK_; [exact: pA_noex | exact: A_final_state]. Qed.
+
+
 Definition gA2Bout gf gi :=
   let: (GState ci1 ci2 _ _ _) := gi in
   let: (GState cf1 cf2 _ _ _) := gf in
@@ -548,78 +631,27 @@ Definition gA2B_from (g : gstate) (w : seq letter) : seq letter :=
   pairmap gA2Bout g (gA2Bstates g w).
 
 Arguments gA2B_from / g w.
-(* Complete invariant. By brute force case analysis excepy for the only *)
-(* interesting case of the (tail) induction on l is, i.e. when it ends with Se:*)
-(* in this case the hypothesis (pAword l) forbids ct1 c = ct2 c = 0. We *)
-(* need to kind of reproduce this proof outside this one to ensure we never hit*)
-(* this  exceptional case... Can we do better? *)
-
-Lemma pA_gtA2B_inv w gi (g := foldl gtA2B gi w) :
-  w \in pAword ->
-  [/\
-#N  w + dy1 gi + dy2 gi + ct1 gi + ct2 gi = dy1 g + dy2 g + ct1 g + ct2 g         ,
-#Se w + dy1 gi + dy2 gi                   = dy1 g + dy2 g                         &
-#W  w + dy1 gi + ct2 gi + free gi         = dy1 g +                 ct2 g + free g
-].
-Proof.
-rewrite {}/g; elim/last_ind: w => [| w l ihw] /= pAwl=> //; rewrite !foldl_rcons.
-have {ihw} /ihw := pA_rcons _ pAwl.
-move: (foldl gtA2B gi w) => c [eN eSe eW].
-case: l pAwl => pAwl; rewrite !count_mem_rcons !eqxx /=.
-- by rewrite !addSn {}eW {}eN {}eSe; case: c => * /=; split; ring.
-- by rewrite !addSn {}eW {}eN {}eSe; case: c => [] [|c1] * /=; split; ring.
-- suff {eW} : ct1 c + ct2 c != 0.
-    rewrite !addSn {}eW {}eN {}eSe; case: c => [] [|?] [|?] * //=; split; ring.
-  have {pAwl} /contraL : #Se w < #N w := pA_rconsSe pAwl.
-  apply; rewrite addn_eq0; case/andP=> /eqP e1 /eqP e2.
-  suff /eqP-> : #Se w == #N w + (ct1 gi + ct2 gi) by rewrite -leqNgt leq_addr.
-  by rewrite -(eqn_add2r (dy1 gi + dy2 gi)) addnAC !addnA eN eSe e1 e2 !addn0.
-Qed.
-
-(* We prove that d1 d2 and f are really ghost variables: they do not *)
-(*    affect the computation of the data and of c1 and c2, as witnessed by *)
-(*    the fact these coincide with the values of the (ghost-free) *)
-(*    function (spipe tA2B) *)
-
-Lemma state_of_foldl_gtA2B c d1 d2 f l (gi := mkGState c d1 d2 f) :
-  state_of_gstate (foldl gtA2B gi l) = foldl tA2B c l.
-Proof.
-have -> : c = state_of_gstate gi by rewrite {}/gi; case: c=> [] [].
-elim: l gi => [|h l ihl] //= gi; rewrite {}ihl; congr foldl.
-by case: gi=> c1 c2* {l} /=; case: h => //=; case: c1 => * //; case: c2 => *.
-Qed.
-
-Lemma pA_noex l h c : rcons l h \in pAword -> noex h (foldl tA2B c l).
-Proof.
-rewrite /noex; case: h; rewrite ?orbT // orbF -negb_and => pA.
-rewrite -(state_of_foldl_gtA2B _ 0 0 0); set gi := mkGState _ _ _ _.
-have /(pA_gtA2B_inv gi) := pA_rcons _ pA.
-move: (foldl _ _ _) => [] c1 c2 d1 d2 f /=; rewrite !addn0; case=> /eqP eN eSe _.
-apply: contraL eN => /andP [/eqP-> /eqP->]; rewrite !addn0 -{}eSe.
-by apply: contraL (pA_rconsSe pA); move/eqP<-; rewrite -leqNgt -addnA leq_addr.
-Qed.
-
-Lemma A_final_state l : l \in Aword -> foldl tA2B {|0; 0|} l = {|0; 0|}.
-Proof.
-case/AwordP=> /(pA_gtA2B_inv g0); rewrite -(state_of_foldl_gtA2B _ 0 0 0) /=.
-rewrite !addn0; move: (foldl _ _ _) => [] c1 c2 d1 d2 f /= [-> -> ->].
-rewrite -addnA addnC; move/(canRL (addnK _)); rewrite subnn.
-by case: c1 => [|?] //; case: c2.
-Qed.
-
-Theorem A2BK : {in Aword, cancel A2B B2A}.
-Proof. apply: A2BK_; [exact: pA_noex | exact: A_final_state]. Qed.
 
 (* In order to prove that reading a word in A produces a word in B, we
    need another invariant. *)
 
-Lemma gA2B_from_rcons g l h : gA2B_from g (rcons l h) =
-  gA2B_from g l ++
-  [:: gA2Bout (foldl gtA2B g l) (foldl gtA2B g (rcons l h))].
+Lemma gA2B_from_rcons g w l : gA2B_from g (rcons w l) =
+  rcons (gA2B_from g w) (gA2Bout (foldl gtA2B g w) (gtA2B (foldl gtA2B g w) l)).
 Proof.
-rewrite /gA2B_from /gA2Bstates scanl_rcons -cats1 pairmap_cat.
-by rewrite -[pairmap gA2Bout g _]/(gA2B_from g l) last_scanl /= cats1.
+by rewrite /= scanl_rcons -cats1 pairmap_cat /= last_scanl foldl_rcons cats1.
 Qed.
+
+Lemma gA2B_out_state_of g1 g2 :
+  gA2Bout g1 g2 = A2Bout (state_of_gstate g1) (state_of_gstate g2).
+Proof. by case: g1 => c11 c12 *; case: g2 => c21 c22. Qed.
+
+Lemma gA2B_A2B_from s d1 d2 f w :
+  A2B_from s w = gA2B_from (mkGState s d1 d2 f) w.
+Proof.
+elim/last_ind: w => [| w l ihw] //; rewrite gA2B_from_rcons -ihw.
+by rewrite A2B_from_rcons gA2B_out_state_of -!foldl_rcons !state_of_foldl_gtA2B.
+Qed.
+
 
 Lemma pA_noex_ghost l h g : rcons l h \in pAword ->
   noex h (state_of_gstate (foldl gtA2B g l)).
@@ -638,75 +670,58 @@ Lemma pA_gA2B_inv wi gi (g := foldl gtA2B gi wi) (wo := gA2B_from gi wi) :
 #W  wo + dy1 gi = dy1 g].
 Proof.
 rewrite {}/g {}/wo; elim/last_ind: wi => [| w l ihw] pAwl=> //.
-rewrite gA2B_from_rcons !foldl_rcons.
 have {ihw} /ihw := pA_rcons _ pAwl.
 have := pA_noex_ghost gi pAwl.
+rewrite gA2B_from_rcons !foldl_rcons.
 set wo := gA2B_from gi w.
 move: (foldl gtA2B gi w) => g noex [eN eSe eW].
-case: l noex pAwl => [_ | _ | nx] /pAwordP pAwl; rewrite !count_cat /= addn0.
+case: l noex pAwl => [_ | _ | nx] /pAwordP pAwl; rewrite !count_mem_rcons /=.
 - have -> : gA2Bout g (gtA2B g N) = N. (* push this outside *)
     case: g {eN eSe eW} => [] [] [|?] [|?] *; rewrite //= ?eqxx //= ?andbF //.
     by rewrite ltn_eqF.
   have-> /=: gtA2B g N = GState (ct1 g).+1 (ct2 g) (dy1 g) (dy2 g) (free g).
      by case: g {eN eSe eW}.
-  by rewrite !addn0 addn1 addnS !addSn eN eSe eW.
-- case: g eN eSe eW => [] [|c1] c2 d1 d2 f /=; rewrite !addn0 !eqxx => eN eSe eW.
-  + by rewrite addn1 addnS !addn0 !addSn eN eW eSe.
-  + by rewrite andbF /= !addn0 addn1 !addSn eN eW eSe !addnS !addSn.
-- case: g eN eSe eW nx => [] [|c1] [|c2] d1 d2 f //; rewrite !addn0 => eN eSe eW _ /=.
-  + by rewrite ltn_eqF // !eqxx !addn0 eN eSe /= !addnS !addSn addn0 eW.
-  + by rewrite !andbF ltn_eqF //= !addn0 eN eW /= addn1 !addSn eSe !addnS !addSn.
-  + by rewrite ltn_eqF //= !eqxx /= !addn0 addn1 eN eSe /= !addnS !addSn eW.
+  by rewrite addnS !addSn eN eSe eW.
+- case: g eN eSe eW => [] [|c1] c2 d1 d2 f /=; rewrite ?addn0 !eqxx => eN eSe eW.
+  + by rewrite addnS !addSn eN eW eSe.
+  + by rewrite andbF /= !addSn eN eW eSe !addnS !addSn.
+- case: g eN eSe eW nx => [] [|c1] [|c2] d1 d2 f //=;
+    rewrite ?addn0 => eN eSe eW _ /=.
+  + by rewrite ltn_eqF // !eqxx eN eSe /= !addnS !addSn eW.
+  + by rewrite !andbF ltn_eqF //= eN eW /= !addSn eSe !addnS !addSn.
+  + by rewrite ltn_eqF //= !eqxx /= eN eSe /= !addnS !addSn eW.
 Qed.
 
 
 Lemma ghost_gtA2B g s :
   tA2B (state_of_gstate g) s = state_of_gstate (gtA2B g s).
-Proof.
-rewrite /tA2B /gtA2B /state_of_gstate.
-case: g => [] c1 c2 d1 d2 f; case: s => //.
-- by case: c1.
-- by case: c1=> *; case: c2.
-Qed.
+Proof. by case: g => [] c1 c2; case: s => //; case: c1 => //; case: c2. Qed.
 
 Lemma ghost_gA2Bout g1 g2 :
   gA2Bout g1 g2 = A2Bout (state_of_gstate g1) (state_of_gstate g2).
-Proof.
-rewrite /A2Bout /gA2Bout /state_of_gstate.
-by case: g1 => [] c11 c12 d11 d12 f1; case: g2 => [] c21 c22 d21 d22 f2.
-Qed.
-
-Lemma ghost_A2B_ghost l c d1 d2 f (gi := mkGState c d1 d2 f) :
-  gA2B_from gi l = A2B_from c l.
-Proof.
-have -> : c = state_of_gstate gi by rewrite {}/gi; case: c=> [] [].
-elim: l gi => [|h sl ihl] //= gi {d1 d2 f c}.
-rewrite /gA2B_from /= -/(gA2B_from _ _).
-by rewrite /A2B_from -/(A2B_from _ _) ghost_gtA2B ihl ghost_gA2Bout.
-Qed.
+Proof. by case: g1 => [] *; case: g2. Qed.
 
 Lemma pB_A2B_pA l : l \in pAword -> A2B l \in pBword.
 Proof.
 move/pAwordP=> pAl; apply/pBwordP=> n.
-have : take n l \in pAword by apply/pAwordP=> m; rewrite take_take.
-pose gi := g0; move/(pA_gA2B_inv gi).
-rewrite !addn0 -[X in gA2B_from X _]/(mkGState {|0; 0|} 0 0 0).
-rewrite ghost_A2B_ghost -/A2B take_A2B; case=> -> -> ->.
-rewrite -addnA leq_addr /= addnA. set d := dy1 _ + dy2 _.
-by rewrite -[d + _ + _]addnAC -addnA leq_addr.
+have /(pA_gA2B_inv (mkGState {|0; 0|} 0 0 0)) : take n l \in pAword.
+  by apply/pAwordP=> m; rewrite take_take.
+rewrite !addn0 -gA2B_A2B_from -/A2B take_A2B; case=> -> -> ->.
+move: (foldl _ _ _) => g; rewrite -addnA leq_addr /= addnA.
+by set d := dy1 _ + dy2 _; rewrite -[d + _ + _]addnAC -addnA leq_addr.
 Qed.
 
 Theorem B_A2B_A l : l \in Aword -> A2B l \in Bword.
 case/AwordP => pAl eNSe eSeW.
 rewrite -topredE /= /Bword pB_A2B_pA //=.
-pose gi := g0; pose rl := foldl gtA2B gi l.
+pose rl := foldl gtA2B g0 l.
 have /and3P [/eqP ec1 /eqP ec2 /eqP edf]:
   [&& ct1 rl == 0, ct2 rl == 0 & dy2 rl == free rl].
-  move/(pA_gtA2B_inv gi): (pAl); rewrite /= !addn0 -/rl; case=> eN eSe eW.
+  move/(pA_gtA2B_inv g0): (pAl); rewrite /= !addn0 -/rl; case=> eN eSe eW.
   move: eNSe; rewrite eN -addnA eSe; move/(canRL (addKn _)); rewrite subnn.
   move/eqP; rewrite addn_eq0; case/andP=> -> ct20; rewrite (eqP ct20) /=.
   by move/eqP: eSeW; rewrite eW (eqP ct20) addn0 eSe eqn_add2l.
-move/(pA_gA2B_inv gi): pAl; rewrite -/rl ec1 ec2 edf !addn0.
-rewrite -[X in gA2B_from X _]/(mkGState {|0; 0|} 0 0 0) ghost_A2B_ghost.
-by case=> -> -> ->; rewrite addKn -{2}[dy1 _ + _]addn0 subnDl subn0.
+move/(pA_gA2B_inv g0): pAl; rewrite -/rl ec1 ec2 edf !addn0.
+rewrite -(gA2B_A2B_from {|0; 0|} 0 0 0);  case=> -> -> ->.
+by rewrite addKn -{2}[dy1 _ + _]addn0 subnDl subn0.
 Qed.
