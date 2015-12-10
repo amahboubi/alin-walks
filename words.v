@@ -222,22 +222,6 @@ Notation "'{|' c1 ; c2 '|}'" := (State (c1, c2)).
 
 Coercion nat2_of_state s : (nat * nat) := let: State c := s in c.
 
-(* Boilerplate code to recover the canonical properties of nat * nat :
-   decidable equality, choice function, countability. *)
-
-Canonical state_subType := [newType for nat2_of_state].
-
-Definition state_eqMixin := Eval hnf in [eqMixin of state by <:].
-Canonical state_eqType := Eval hnf in EqType state state_eqMixin.
-Definition state_choiceMixin := [choiceMixin of state by <:].
-Canonical state_choiceType :=
-  Eval hnf in ChoiceType state state_choiceMixin.
-Definition state_countMixin := [countMixin of state by <:].
-Canonical state_countType := Eval hnf in CountType state state_countMixin.
-Canonical state_subCountType := [subCountType of state].
-
-(* End of the boilerplate code *)
-
 (* Transition function of the transducer tA2B *)
 Definition tA2B (c : state) (l : letter) : state :=
   match l, c with
@@ -327,7 +311,7 @@ Arguments B2Astates / c w.
 Definition B2Aout (ci cf : state) : letter :=
   let: {|cf1; cf2|} := cf in
   let: {|ci1; ci2|} := ci in
-  if [&& cf1 == 0, ci1 == 0 & (cf2 == ci2)] then W
+  if [&& cf1 == 0, ci1 == 0 & (ci2 == cf2)] then W
   else if (cf1 == ci1.+1) && (ci2 == cf2.+1) then W
   else if (ci1 == cf1.+1) && (cf2 == ci2) then N
   (* else if (cf2 == ci2.+1) && (cf2 == ci2) then Se *)
@@ -403,58 +387,53 @@ Qed.
 
 End CardinalsEquality.
 
-
-(* Let  s2 be such that s1  --     l         --> s2 in automaton A2B.
-   Then s2  -- (A2Bout s1 s2) --> s1  in automaton B2A *)
-
-Lemma tB2A_round s1 l (s2 := tA2B s1 l) : tB2A s2 (A2Bout s1 s2) = s1.
+Lemma A2Bout_tB2A s2 lo : A2Bout (tB2A s2 lo) s2 = lo.
 Proof.
-rewrite {}/s2. (* the s2 abbreviation is really for the sake of readability *)
-by case: s1 => [] [] [|?] [|?]; case: l => //=; rewrite ?eqxx ?andbF //= ltn_eqF.
+by case: lo; case: s2 => [] [[|c1][|c2]] //=; rewrite ?eqxx ?andbF //= ltn_eqF.
 Qed.
 
-(* Let s1 be such that s2  --     l         --> s1 in automaton B2A
-   Then s1  -- (B2Aout s1 s2) --> s2  in automaton B2A *)
+Lemma A2Bout_from_tB2A s1 s2 lo : s1 = tB2A s2 lo -> lo = A2Bout s1 s2.
+Proof. by move->; rewrite A2Bout_tB2A. Qed.
 
-Lemma tA2B_round s2 l (s1 := tB2A s2 l) : tA2B s1 (B2Aout s2 s1) = s2.
-Proof.
-rewrite {}/s1. (* the s1 abbreviation is really for the sake of readability *)
-by case: s2 => [] [] [|?] [|?]; case: l => //=;
-  rewrite ?eqxx ?andbF //= ?[_.+1 == _.+2]ltn_eqF ?andbF // gtn_eqF.
-Qed.
-
-(* Let s1 be such that s2  --     l         --> s1 in automaton B2A
-   Then s1 -- l --> (tA2B s1 (B2Aout s2 s1)) in automaton A2B. *)
-Lemma A2Bout_round s2 l (s1 := tB2A s2 l) : A2Bout s1 (tA2B s1 (B2Aout s2 s1)) = l.
-Proof.
-rewrite {}/s1; case: s2 => [] [] [|c1] [|c2]; case: l => //=;
-  rewrite ?eqxx /tA2B /tA2B /= ?eqxx ?andbF
-                /tB2A /tB2A /= ?eqxx ?andbF //=.
-- by rewrite gtn_eqF //= ltn_eqF // eqxx.
-- by rewrite ltn_eqF //= !andbF ltn_eqF.
-- by rewrite ltn_eqF //= ltn_eqF //= !eqxx.
-- by rewrite ltn_eqF //= ltn_eqF //= !eqxx.
-Qed.
 
 (* But there is one degenerated case, which prevents the expected converse
    identities to hold everywhere *)
 Definition noex  (l : letter) (c : state) :=
    [|| (c.1 != 0%N), (c.2 != 0%N) | (l != Se)].
 
+Lemma B2Aout_tA2B s1 li : noex li s1 -> B2Aout (tA2B s1 li) s1 = li.
+Proof.
+by case: li; case: s1 => [] [[|c1][|c2]] //= _; rewrite ?eqxx ?andbF //= ltn_eqF.
+Qed.
+
+Lemma B2Aout_from_tA2B s1 s2 li : noex li s1 ->
+  s2 = tA2B s1 li -> B2Aout s2 s1 = li.
+Proof. move=> nx ->; exact: B2Aout_tA2B. Qed.
+
+(* tB2A s2 lo = s1 -> li = B2Aout s2 s1 -> tA2B s1 li = s2. *)
+Lemma tA2B_round s2 lo (s1 := tB2A s2 lo) : tA2B s1 (B2Aout s2 s1) = s2.
+Proof.
+rewrite {}/s1. (* the s1 abbreviation is really for the sake of readability *)
+by case: s2 => [] [[|?] [|?]]; case: lo => //=; rewrite ?eqxx ?andbF 1?ltn_eqF.
+Qed.
+
+(* tA2B s1 li = s2 -> lo = A2Bout s1 s2 -> tB2A s2 lo = s1. *)
+Lemma tB2A_round s1 lo (s2 := tA2B s1 lo) : tB2A s2 (A2Bout s1 s2) = s1.
+Proof.
+rewrite {}/s2. (* the s2 abbreviation is really for the sake of readability *)
+by case: s1 => [] [] [|?] [|?]; case: lo => //=; rewrite ?eqxx ?andbF // ltn_eqF.
+Qed.
+
+(* Let s1 be such that s2  --     l         --> s1 in automaton B2A
+   Then s1 -- l --> (tA2B s1 (B2Aout s2 s1)) in automaton A2B. *)
+Lemma A2Bout_round s2 l (s1 := tB2A s2 l) : A2Bout s1 (tA2B s1 (B2Aout s2 s1)) = l.
+Proof. by rewrite tA2B_round /s1 A2Bout_tB2A. Qed.
+
 (* Let  s2 be such that s1  --     l         --> s2 in automaton A2B.
    Then s2 -- l --> (tB2A s2 (A2Bout s1 s2)) in automaton B2A *)
 Lemma B2Aout_round s1 l (s2 := tA2B s1 l) : noex l s1 ->
   B2Aout s2 (tB2A s2 (A2Bout s1 s2)) = l.
-Proof.
-rewrite {}/s2; case: s1 => [] [] [|c1] [|c2]; case: l => //= _;
-  rewrite ?eqxx /tA2B /tA2B /= ?eqxx ?andbF
-                /tB2A /tB2A /= ?eqxx ?andbF // ltn_eqF //= ?eqxx /=.
-- by rewrite gtn_eqF.
-- by rewrite ltn_eqF.
-- by rewrite ltn_eqF.
-- by rewrite ltn_eqF.
-Qed.
-
+Proof. by move=> nx; rewrite tB2A_round B2Aout_tA2B. Qed.
 
 (* Let cf be the state reached when starting from state ci and reading word wi
    with automaton B2A. Let wf := (B2A_from ci wi) be the word output. Then
@@ -471,7 +450,6 @@ rewrite -/(B2A_from c w) /= rev_rcons; congr cons; last first.
   rewrite {}/cf {}/s last_scanl foldl_rcons; exact: tA2B_round.
 by rewrite {}/cf {}/s foldl_rcons last_scanl; apply: A2Bout_round.
 Qed.
-
 
 Section SufficientConditionsForCancel.
 
