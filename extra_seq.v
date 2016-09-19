@@ -1,4 +1,4 @@
-Require Import ssreflect ssrfun ssrbool eqtype ssrnat seq.
+From mathcomp Require Import ssreflect ssrfun ssrbool eqtype ssrnat seq.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -13,6 +13,16 @@ Lemma count_mem_rcons {T : eqType} (t : T) (w : seq T) (a : T) :
 Proof.
 by rewrite -cats1 count_cat /=; case: ifP=> _; rewrite ?addn0 ?addn1.
 Qed.
+
+Lemma drop_add {T : Type} (d : T) (w : seq T) (n1 n2 : nat) :
+   drop (n1 + n2) w = drop n1 (drop n2 w).
+Proof.
+elim: n1 n2 w => [| n1 ihn1] //= n2 w; first by rewrite add0n drop0.
+rewrite addSn -addnS ihn1 -(addn1 n1) ihn1.
+case: (ltnP n2 (size w)) => hn2; first by rewrite (drop_nth d hn2) /= drop0.
+by rewrite ![drop _ w]drop_oversize //=; apply: leq_trans hn2 _.
+Qed.
+
 
 Section ExtraScanPairmapFoldl.
 
@@ -59,5 +69,18 @@ case: (ltnP m _) => // lessm; rewrite ?ltnm //; case: ltnP => // leqssn.
 rewrite [LHS]take_oversize; first by rewrite drop_oversize ?cats0.
 by rewrite size_take? ltnNge lessm.
 Qed.
+
+Lemma pairmap_rcons s y :
+  pairmap f x1 (rcons s y) = rcons (pairmap f x1 s) (f (last x1 s) y).
+Proof. by rewrite -cats1 pairmap_cat /= cats1. Qed.
+
+Lemma rev_pairmap y z :
+  rev (pairmap f x1 (rcons z y)) =
+  pairmap (fun x y => f y x) y (rcons (rev z) x1).
+Proof.
+elim/last_ind: z y => [| z c ihz] //= y.
+by rewrite pairmap_rcons rev_rcons last_rcons rev_rcons rcons_cons /= ihz.
+Qed.
+
 
 End ExtraScanPairmapFoldl.

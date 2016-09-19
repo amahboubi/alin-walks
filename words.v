@@ -1,5 +1,5 @@
-Require Import ssreflect ssrfun ssrbool eqtype ssrnat seq.
-Require Import choice tuple fintype (* finfun finset *).
+From mathcomp Require Import ssreflect ssrfun ssrbool eqtype ssrnat seq.
+From mathcomp Require Import choice tuple fintype (* finfun finset *).
 
 Require Import extra_seq.
 
@@ -8,6 +8,7 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
+(*-- 3 Letter alphabet --*)
 
 (* Type letter is the three-letter alphabet of the words we want to count.
    The names of the letters reminds how they will be interpreted as
@@ -17,7 +18,7 @@ Inductive letter : Type := N | W | Se.
 
 (* Starting boilerplate code: *)
 
-(* Type letter has a canonical decidable equality test, is a countable, even finite
+(* Type letter has a canonical decidable equality test, is a countable (finite)
    type, thus equipped with a choice function. We obtain these properties, and
    the associated generic notations and theory by expliciting a bijection
    bewteen type letter and the finite type 'I_3 of natural numbers {0,1,2}:
@@ -77,6 +78,8 @@ elim: w => // [[]] l /= <-. rewrite !add0n.
 - by rewrite [_ + (1 + _)]addnCA -!addnA add1n.
 - by rewrite [_ + (1 + _)]addnCA add1n.
 Qed.
+
+(*-- Two families of words --*)
 
 (* We consider a family Aword of words on alphabet letter. A word w verifies Aword
    iff:
@@ -213,6 +216,9 @@ Lemma BpBword l : l \in Bword -> l \in pBword. Proof. by case/andP. Qed.
    (resp. tB2A) when reading w.
 *)
 
+
+(*--- Transducers and bijection(s) ---*)
+
 (* Data structure for states of the transducers: a tagged copy of nat * nat.*)
 Inductive state := State of nat * nat.
 
@@ -264,9 +270,9 @@ Arguments tB2A c l : simpl never.
 
 
 
-(* A2B (resp.) is defined from tA2B as follows:
+(* A2B (resp. B2A) is defined from tA2B as follows:
    - from a word w and an intial state c, we produce the sequence
-     (A2Bstates c w) (resp.  (A2Bstates c w)) of states scanned when it is read
+     (A2Bstates c w) (resp.  (B2Astates c w)) of states scanned when it is read
      by tA2B (resp. tB2A);
    - crucially, given two states cf and ci, there is a unique possible letter
      (A2Bout ci cf) (resp. B2Aout) read by a transition tB2A (resp. tA2B)
@@ -303,7 +309,7 @@ Definition A2B := A2B_from {|0; 0|}.
 Arguments A2B /.
 
 
-(* B2A is defined in a similar manner as A2B (with no degenerated case). *)
+(* B2A is defined in a similar manner as A2B (but has no junk case). *)
 
 Definition B2Astates  (c : state) (w : seq letter) : seq state :=
   scanl tB2A c w.
@@ -349,6 +355,10 @@ Proof. by rewrite /= size_pairmap size_scanl. Qed.
 Lemma sizeB2A w : size (B2A w) = size w.
 Proof. by rewrite /= size_rev size_pairmap size_scanl size_rev. Qed.
 
+
+(*--- We prove that #A = #B by showing that A2B (resp. B2A) sends A (resp. B)
+  on B (resp. A) and is a right inverse of B2A (resp. A2B). ---*)
+
 Section CardinalsEquality.
 
 Hypothesis A2BK : {in Bword, cancel B2A A2B}.
@@ -389,6 +399,11 @@ by rewrite /= -Bs -Bt est.
 Qed.
 
 End CardinalsEquality.
+
+
+(*--- Reduction: we prove that the conditions on A2B, B2A can be reduced to
+  assumptions on the states of the transducer(s), whose proofs require
+  introducing ghost variables to state and establish suitable invariants. ---*)
 
 Lemma A2Bout_tB2A s2 lo : A2Bout (tB2A s2 lo) s2 = lo.
 Proof.
@@ -495,6 +510,9 @@ Qed.
 
 End SufficientConditionsForCancel.
 
+
+(*--- A few usefull technical surgery lemmas about A2B and B2A ---*)
+
 Lemma take_A2B n l : A2B (take n l) = take n (A2B l).
 Proof. by rewrite /A2B /A2B_from /A2Bstates -take_scanl -take_pairmap. Qed.
 
@@ -526,8 +544,14 @@ Lemma B2A_cons w l (s := foldl tB2A {|0; 0|} (rev w)) :
   B2A (l :: w) = (B2Aout s (tB2A s l)) :: (B2A w).
 Proof. by rewrite /B2A rev_cons B2A_from_rcons rev_rcons. Qed.
 
-(* Now we prove the two remaining facts about words in A, plus the important
-  missing property of A2B : that its image is included in Bword *)
+(*--- Invariant of the A2B transducer, by decoration with ghost variables. This
+      proves the two remaining facts about words in A, plus the important
+      missing property of A2B : that its image is included in Bword ---*)
+
+(* The states of the automaton are augmented with 3 more natural numbers, that
+   count respectively: the number of Dyck words (N, Se) processed so far (d1);
+   the number of pseudo-Dyck words (NSe, W) in progress so
+   far (d2); the number of "free" occurrences of W processed so far (f) *)
 
 Record gstate :=
   GState {ct1: nat; ct2: nat; dy1 : nat; dy2 : nat; free : nat}.
@@ -553,8 +577,17 @@ end.
 
 Definition gtA2B := nosimpl gtA2B_.
 
+(* Forgeting the ghost information in a list of reached states *)
+Lemma state_of_foldl_gtA2B s d1 d2 f w (g := mkGState s d1 d2 f) :
+  state_of_gstate (foldl gtA2B g w) = foldl tA2B s w.
+Proof.
+have -> : s = state_of_gstate g by rewrite {}/g; case: s => [] [].
+elim: w g => [|h w ihw] //= g; rewrite {}ihw; congr foldl.
+by case: g=> c1 c2* {w} /=; case: h => //=; case: c1 => * //; case: c2 => *.
+Qed.
+
 (* Invariant for gtA2B. By brute force case analysis excepy for the only *)
-(* interesting case of the (tail) induction on l is, i.e. when it ends with Se:*)
+(* interesting case of the (tail) induction on w is, i.e. when it ends with Se:*)
 (* in this case the hypothesis (pAword l) forbids ct1 c = ct2 c = 0. We *)
 (* need to kind of reproduce this proof outside this one to ensure we never hit*)
 (* this  exceptional case... Can we do better? *)
@@ -584,6 +617,7 @@ case: l pAwl => pAwl; rewrite !count_mem_rcons !eqxx /=.
   by rewrite -(eqn_add2r (dy1 gi + dy2 gi)) addnAC !addnA eN eSe e1 e2 !addn0.
 Qed.
 
+(* Lifting the exceptional case to states with ghosts *)
 Definition gnoex (l : letter) (g : gstate) :=
    [|| ct1 g != 0, ct2 g != 0 | l != Se].
 
@@ -598,14 +632,6 @@ move: (foldl _ _ _) => [] c1 c2 d1 d2 f /= [] eN eSe _.
 apply: contraL (pA_rconsSe pA); case/andP => /eqP e1 /eqP e2.
 suff /eqP-> : #Se w == #N w + (ct1 g + ct2 g) by rewrite -leqNgt leq_addr.
 by rewrite -(eqn_add2r (dy1 g + dy2 g)) addnAC !addnA eN eSe e1 e2 !addn0.
-Qed.
-
-Lemma state_of_foldl_gtA2B s d1 d2 f w (g := mkGState s d1 d2 f) :
-  state_of_gstate (foldl gtA2B g w) = foldl tA2B s w.
-Proof.
-have -> : s = state_of_gstate g by rewrite {}/g; case: s => [] [].
-elim: w g => [|h w ihw] //= g; rewrite {}ihw; congr foldl.
-by case: g=> c1 c2* {w} /=; case: h => //=; case: c1 => * //; case: c2 => *.
 Qed.
 
 Lemma pA_noex  w l s : rcons w l \in pAword -> noex l (foldl tA2B s w).
@@ -663,7 +689,6 @@ elim/last_ind: w => [| w l ihw] //; rewrite gA2B_from_rcons -ihw.
 by rewrite A2B_from_rcons gA2B_out_state_of -!foldl_rcons !state_of_foldl_gtA2B.
 Qed.
 
-
 Lemma pA_noex_ghost l h g : rcons l h \in pAword ->
   noex h (state_of_gstate (foldl gtA2B g l)).
 Proof.
@@ -671,6 +696,8 @@ have -> : g = mkGState {|ct1 g; ct2 g|} (dy1 g) (dy2 g) (free g) by case: g.
 rewrite state_of_foldl_gtA2B; exact: pA_noex.
 Qed.
 
+
+(* Second invariant *)
 Lemma pA_gA2B_inv wi gi (g := foldl gtA2B gi wi) (wo := gA2B_from gi wi) :
   wi \in pAword ->
   [/\
@@ -736,32 +763,6 @@ move/(pA_gA2B_inv g0): pAl; rewrite -/rl ec1 ec2 edf !addn0.
 rewrite -(gA2B_A2B_from {|0; 0|} 0 0 0);  case=> -> -> ->.
 by rewrite addKn -{2}[dy1 _ + _]addn0 subnDl subn0.
 Qed.
-
-Section ExtraSeq.
-
-Variables (letter state : Type).
-Variables (f : state -> letter -> state) (t : state -> state -> letter).
-
-Lemma rev_pairmap ci cf sc :
-  rev (pairmap t ci (rcons sc cf)) =
-  pairmap (fun x y => t y x) cf (rcons (rev sc) ci).
-Proof.
-elim/last_ind: sc ci cf => [| sc c ihsc] //= ci cf.
-by rewrite pairmap_rcons rev_rcons last_rcons rev_rcons rcons_cons /= ihsc.
-Qed.
-
-
-(* drop_nth imposes a default element ... *)
-Lemma drop_add (d : letter) (w : seq letter) (n1 n2 : nat) :
-   drop (n1 + n2) w = drop n1 (drop n2 w).
-Proof.
-elim: n1 n2 w => [| n1 ihn1] //= n2 w; first by rewrite add0n drop0.
-rewrite addSn -addnS ihn1 -(addn1 n1) ihn1.
-case: (ltnP n2 (size w)) => hn2; first by rewrite (drop_nth d hn2) /= drop0.
-by rewrite ![drop _ w]drop_oversize //=; apply: leq_trans hn2 _.
-Qed.
-
-End ExtraSeq.
 
 Lemma statesB2AK c w (wo := B2A_from c w) :
   c :: scanl tB2A c w =
@@ -941,7 +942,9 @@ have : (foldl tB2A {|0; 0|} (rev w)).2 = 0.
 by case: (foldl _ _ _) => [] [c1 c2] /= -> ->.
 Qed.
 
-(*
+Theorem B2AK : {in Bword, cancel B2A A2B}.
+Proof. by apply: B2AK_ => w hw; apply: B_final_state; apply: BpBword. Qed.
+
 
 Record gbstate :=
   Gbstate {ctb1: nat; ctb2: nat; dyb1 : nat; dyb2 : nat; freeb : nat; ob : nat}.
@@ -997,19 +1000,6 @@ elim: w g => [|h w ihw] //= g; rewrite {}ihw; congr foldl.
 by case: g=> c1 c2 ? ? ? [|og] {w} /=; case: h; case: c1 => *; case: c2 => *.
 Qed.
 
-Lemma again_and_again w : w \in Bword ->
-  state_of_gbstate (foldl gtB2A gb0 (rev w)) = {|0; 0|}.
-Proof.
-move=> Bw.
-have hw1 : #W w <= #Se w by admit.
-have hw2 : #Se w <= #N w by admit.
-have hw3 : #N w - #Se w = #Se w - #W w by admit.
-have /= := gtB2A_inv (rev w) gb0.
-case: (foldl _ _ _) => c1 c2 d1 d2 f o /=.
-rewrite !addn0 !count_rev; case=> eN eSe eW.
-move: hw3.
-  rewrite eN eSe subnDl.
-
 
 Definition gB2Aout (gi gf : gbstate) : letter :=
   let: (Gbstate ci1 ci2 _ _ _ _) := gi in
@@ -1039,6 +1029,8 @@ Lemma gB2A_from_rcons g w l : gB2A_from g (rcons w l) =
 Proof.
 by rewrite /= scanl_rcons -cats1 pairmap_cat /= last_scanl foldl_rcons cats1.
 Qed.
+
+
 
 Lemma gB2A_from_inv wi gi (g := foldl gtB2A gi wi) (wo := gB2A_from gi wi) :
   [/\
@@ -1070,436 +1062,19 @@ case: l.
   + by rewrite !addSn ?addnS; move=> -> -> ->.
 Qed.
 
-Definition gB2A (w : seq letter) := rev (gB2A_from gb0 (rev w)).
-
-Lemma gB2A_inv wi (wo := gB2A wi) :
-wi \in Bword ->
-  [/\
-#N  wo = 0,
-#Se wo = 0                         &
-#W  wo = 0].
-Proof.
-have /= := gtB2A_inv (rev wi) gb0; rewrite !addn0 !count_rev.
-have /= := gB2A_from_inv (rev wi) gb0.
-set g := foldl _ _ _; rewrite -/(gB2A_from _ _) !addn0.
-rewrite -[#N(_ )]count_rev -[#Se(_ )]count_rev -[#W(_ )]count_rev.
-rewrite -/(gB2A wi).
-case=> eN eSe eW.
-
-
-Lemma gB2A_out_state_of g1 g2 :
-
-  gB2Aout g1 g2 = B2Aout (state_of_gbstate g1) (state_of_gbstate g2).
-Proof. by case: g1 => c11 c12 *; case: g2 => c21 c22. Qed.
-
-Lemma gB2A_A2B_from s d1 d2 f o w :
-  B2A_from s w = gB2A_from (mkGbstate s d1 d2 f o) w.
-Proof.
-elim/last_ind: w => [| w l ihw] //; rewrite gB2A_from_rcons -ihw.
-by rewrite B2A_from_rcons gB2A_out_state_of -!foldl_rcons !state_of_foldl_gtB2A.
-Qed.
-
-
-(* Lemma ghost_gtA2B g s : *)
-(*   tA2B (state_of_gstate g) s = state_of_gstate (gtA2B g s). *)
-(* Proof. by case: g => [] c1 c2; case: s => //; case: c1 => //; case: c2. Qed. *)
-
-(* Lemma ghost_gB2Aout g1 g2 : *)
-(*   gB2Aout g1 g2 = A2Bout (state_of_gstate g1) (state_of_gstate g2). *)
-(* Proof. by case: g1 => [] *; case: g2. Qed. *)
-
-(* Lemma pB_A2B_pA l : l \in pAword -> A2B l \in pBword. *)
-(* Proof. *)
-(* move/pAwordP=> pAl; apply/pBwordP=> n. *)
-(* have /(pA_gB2A_inv (mkGState {|0; 0|} 0 0 0)) : take n l \in pAword. *)
-(*   by apply/pAwordP=> m; rewrite take_take. *)
-(* rewrite !addn0 -gB2A_A2B_from -/A2B take_A2B; case=> -> -> ->. *)
-(* move: (foldl _ _ _) => g; rewrite -addnA leq_addr /= addnA. *)
-(* by set d := dy1 _ + dy2 _; rewrite -[d + _ + _]addnAC -addnA leq_addr. *)
-(* Qed. *)
-
-(* Theorem B_A2B_A l : l \in Aword -> A2B l \in Bword. *)
-(* case/AwordP => pAl eNSe eSeW. *)
-(* rewrite -topredE /= /Bword pB_A2B_pA //=. *)
-(* pose rl := foldl gtA2B g0 l. *)
-(* have /and3P [/eqP ec1 /eqP ec2 /eqP edf]: *)
-(*   [&& ct1 rl == 0, ct2 rl == 0 & dy2 rl == free rl]. *)
-(*   move/(pA_gtA2B_inv g0): (pAl); rewrite /= !addn0 -/rl; case=> eN eSe eW. *)
-(*   move: eNSe; rewrite eN -addnA eSe; move/(canRL (addKn _)); rewrite subnn. *)
-(*   move/eqP; rewrite addn_eq0; case/andP=> -> ct20; rewrite (eqP ct20) /=. *)
-(*   by move/eqP: eSeW; rewrite eW (eqP ct20) addn0 eSe eqn_add2l. *)
-(* move/(pA_gB2A_inv g0): pAl; rewrite -/rl ec1 ec2 edf !addn0. *)
-(* rewrite -(gB2A_A2B_from {|0; 0|} 0 0 0);  case=> -> -> ->. *)
-(* by rewrite addKn -{2}[dy1 _ + _]addn0 subnDl subn0. *)
-(* Qed. *)
-
-
-Lemma statesB2AK c w (wo := B2A_from c w) :
-  c :: scanl tB2A c w =
-  rcons (rev (scanl tA2B (foldl tB2A c w) (rev wo))) (foldl tB2A c w).
-Proof.
-rewrite {}/wo; elim/last_ind: w => [| l w ihw] //.
-rewrite scanl_rcons -rcons_cons; congr rcons; rewrite {}ihw.
-rewrite B2A_from_rcons rev_rcons foldl_rcons; set co := foldl _ _ _.
-by rewrite [scanl _ _ (_ :: _)]/= tA2B_round rev_cons.
-Qed.
-
-Lemma statesA2BK c w (wo := A2B_from c w) :
-  c :: scanl tA2B c w =
-  rcons (rev (scanl tB2A (foldl tA2B c w) (rev wo))) (foldl tA2B c w).
-Proof.
-rewrite {}/wo; elim/last_ind: w => [| l w ihw] //.
-rewrite scanl_rcons -rcons_cons; congr rcons; rewrite {}ihw.
-rewrite A2B_from_rcons rev_rcons foldl_rcons; set co := foldl _ _ _.
-by rewrite [scanl _ _ (_ :: _)]/= tB2A_round rev_cons.
-Qed.
-
-Lemma foo s2 : cancel (tB2A s2) (fun x => A2Bout x s2).
-Proof. move=> y /=. exact: A2Bout_tB2A. Qed.
-
-Lemma bar s2 : cancel (scanl tB2A s2) (pairmap (fun y x => A2Bout x y) s2).
-Proof. apply: scanlK; exact: foo. Qed.
-
-Lemma B_final_state : forall l,
-  (rev l) \in Bword -> foldl tB2A {|0; 0|} l = {|0; 0|}.
-Proof.
-move=> w; case/BwordP => /pBwordP.
-rewrite !count_rev.
-Search _ take rev.
-
-
-
-Lemma pA_gtA2B_inv w gi (g := foldl gtA2B gi w) :
-  w \in pAword ->
-  [/\
-#N  w + dy1 gi + dy2 gi + ct1 gi + ct2 gi =
-        dy1 g  + dy2 g  + ct1 g  + ct2 g   ,
-#Se w + dy1 gi + dy2 gi                   =
-        dy1 g  + dy2 g                      &
-#W  w + dy1 gi + ct2 gi + free gi         =
-        dy1 g  + ct2 g  + free g
-].
-
-
-
-Search _ scanl.
-Lemma pA_B2A_inv wi si (s := foldl tB2A si wi) (wo := B2A_from si wi) :
-  wi \in pBword -> exists d2 : nat, exists f : nat,
-(#N  wo + si.1 + si.2 = #W wo + s.1 + s.2 + d2 + f) /\
-(#Se wo + si.1 = #W wo + s.1 + d2).
-Proof.
-rewrite {}/s {}/wo; elim/last_ind: wi => [| w l ihw].
-  by move=> _; exists 0; exists 0; rewrite /= !add0n !addn0.
-move=> pBwl.
-have /ihw [dw2 [fw]]: w \in pBword := pBword_rcons pBwl.
-rewrite B2A_from_rcons !count_mem_rcons !foldl_rcons.
-set wo := B2A_from si w; move: (foldl tB2A si w) => s [eN eSe].
-case: l pBwl => /pBwordP h.
-- case: s eN eSe=> [] [] [|c1] c2 /=.
-  + rewrite eqxx /= !addn0 => eN eSe.
-    by exists dw2.+1; exists fw; rewrite addSn -eN -eSe !addnS.
-  + rewrite !andbF !eqxx /= !ltn_eqF //= !addnS !addSn => eN eSe.
-
-
-
-Lemma B_final_state w : w \in Bword -> foldl tB2A {|0; 0|} (rev w) = {|0; 0|}.
-Proof.
-move=> Bw.
-case/lastP: w Bw => [| w l] // Bw.
-rewrite rev_rcons /=.
-
-Goal forall s1 : state, forall w : seq letter, True.
-move=> s1 w; have /= := bar s1 w.
-Lemma A2Bout_tB2A s2 lo : A2Bout (tB2A s2 lo) s2 = lo.
-Proof.
-by case: lo; case: s2 => [] [[|c1][|c2]] //=; rewrite ?eqxx ?andbF //= ltn_eqF.
-Qed.
-
-
-Lemma rev_pairmap T (f : letter -> letter -> T) w li lf :
-  rev (pairmap f li (rcons w lf)) =
-  pairmap (fun x => f^~ x) lf (rcons (rev w) li).
-Proof.
-Search _ pairmap.
-elim: w li lf => [|l w ihw] li lf //.
-rewrite rcons_cons /= rev_cons {}ihw.
-rewrite [in RHS]rev_cons.
- !rev_cons ihw.
-
-Lemma foo w : B2A w = B2A w.
-rewrite /=.
-
-Lemma pA_gtA2B_inv w gi (g := foldl gtA2B gi w) :
-  w \in pAword ->
-  [/\
-#N  w + dy1 gi + dy2 gi + ct1 gi + ct2 gi =
-        dy1 g  + dy2 g  + ct1 g  + ct2 g   ,
-#Se w + dy1 gi + dy2 gi                   =
-        dy1 g  + dy2 g                      &
-#W  w + dy1 gi + ct2 gi + free gi         =
-        dy1 g  + ct2 g  + free g
-].
-
-
-Lemma pA_B2A_inv w1 w1 (s1 := foldl tB2A {|0; 0|} w1) (wo := B2A_from s1 w2) :
-  w1 ++ w2 \in pBword -> exists d2 : nat, exists f : nat,
-(#N  wo + si.1 + si.2 + d2 + f = #W wo + s.1 + s.2) /\
-(#Se wo + si.1 + d2 = #W wo + s.1).
-Proof.
-rewrite {}/s {}/wo; elim/last_ind: wi => [| w l ihw].
-  by move=> _; exists 0; exists 0; rewrite /= !add0n !addn0.
-move=> pBwl.
-have /ihw [dw2 [fw]]: w \in pBword := pBword_rcons pBwl.
-rewrite B2A_from_rcons !count_mem_rcons !foldl_rcons.
-set wo := B2A_from si w; move: (foldl tB2A si w) => s [eN eSe].
-case: l pBwl => /pBwordP h.
-- case: s eN eSe=> [] [] [|c1] c2 /=.
-  + rewrite eqxx /= !addn0 => eN eSe.
-    by exists dw2.+1; exists fw; rewrite addSn -eN -eSe !addnS.
-  + rewrite !andbF !eqxx /= !ltn_eqF //= !addnS !addSn => eN eSe.
-
-
-
-Lemma pA_B2A_inv wi si (s := foldl tB2A si wi) (wo := B2A_from si wi) :
-  wi \in pBword -> exists d2 : nat, exists f : nat,
-(#N  wo + si.1 + si.2 + d2 + f = #W wo + s.1 + s.2) /\
-(#Se wo + si.1 + d2 = #W wo + s.1).
-Proof.
-rewrite {}/s {}/wo; elim/last_ind: wi => [| w l ihw].
-  by move=> _; exists 0; exists 0; rewrite /= !add0n !addn0.
-move=> pBwl.
-have /ihw [dw2 [fw]]: w \in pBword := pBword_rcons pBwl.
-rewrite B2A_from_rcons !count_mem_rcons !foldl_rcons.
-set wo := B2A_from si w; move: (foldl tB2A si w) => s [eN eSe].
-case: l pBwl => /pBwordP h.
-- case: s eN eSe=> [] [] [|c1] c2 /=.
-  + rewrite eqxx /= !addn0 => eN eSe.
-    by exists dw2.+1; exists fw; rewrite addSn -eN -eSe !addnS.
-  + rewrite !andbF !eqxx /= !ltn_eqF //= !addnS !addSn => eN eSe.
-
-
-Lemma pA_B2A_inv wi si (s := foldl tB2A si wi) (wo := B2A_from si wi) :
-  wi \in pBword -> exists d2 : nat, exists f : nat,
-(#N  wo + si.1 + si.2 = #W wo + d2 + f + s.1 + s.2) /\
-(#Se wo + si.1 = #W wo + d2 + s.1).
-Proof.
-rewrite {}/s {}/wo; elim/last_ind: wi => [| w l ihw].
-  by move=> _; exists 0; exists 0; rewrite !add0n.
-move=> pBwl.
-have /ihw [dw2 [fw]]: w \in pBword := pBword_rcons pBwl.
-rewrite B2A_from_rcons !count_mem_rcons !foldl_rcons.
-set wo := B2A_from si w; move: (foldl tB2A si w) => s [eN eSe].
-case: l pBwl => /pBwordP h.
-- case: s eN eSe=> [] [] [|c1] c2 /=.
-  + rewrite eqxx /= !addn0 => -> ->.
-
-
-
-Definition tB2A (c : state) (l : letter) : state :=
-  match l, c with
-    | N,  {|0    ; c2   |} =>
-          {|0    ; c2   |} (* (W,  {|0    ; c2   |}) *) (* _ , _  *)
-    | Se, {|c1   ; c2.+1|} =>
-          {|c1.+1; c2   |} (* (W,  {|c1.+1; c2   |}) *) (* +1, -1 *)
-    | N,  {|c1.+1; c2   |} =>
-          {|c1   ; c2   |} (* (N,  {|c1   ; c2   |}) *) (* -1, _  *)
-    | W,  {|c1   ; c2   |} =>
-          {|c1   ; c2.+1|} (* (Se, {|c1   ; c2.+1|}) *) (* _ , +1 *)
-    | Se, {|c1   ; 0    |} =>
-          {|c1.+1; 0    |} (* (Se, {|c1.+1; 0    |}) *) (* +1, _  *)
-  end.
-
-Definition B2Aout (ci cf : state) : letter :=
-  let: {|cf1; cf2|} := cf in
-  let: {|ci1; ci2|} := ci in
-  if [&& cf1 == 0, ci1 == 0 & (ci2 == cf2)] then W
-  else if (cf1 == ci1.+1) && (ci2 == cf2.+1) then W
-  else if (ci1 == cf1.+1) && (cf2 == ci2) then N
-  (* else if (cf2 == ci2.+1) && (cf2 == ci2) then Se *)
-  (* else if (cf1 == ci1.+1) && (cf2 == 0) && (ci2 == 0) then Se *)
-  else Se (* junk *).
-
-
-
-
-Definition gtB2A (g : gstate) (l : letter) : state :=
-  match l, g with
-    | N,  GState 0     c2    d1 d2 f =>
-          GState 0     c2    d1 d2 f (* (W,  GState 0     c2   |}) *) (* _ , _  *)
-    | Se, GState c1    c2.+1 d1 d2 f =>
-          GState c1.+1 c2    d1 d2 f (* (W,  GState c1.+1 c2    d1 d2 f) *) (* +1, -1 *)
-    | N,  GState c1.+1 c2    d1 d2 f =>
-          GState c1    c2    d1 d2 f (* (N,  GState c1    c2   |}) *) (* -1, _  *)
-    | W,  GState c1    c2    d1 d2 f =>
-          GState c1    c2.+1 d1 d2 f (* (Se, GState c1    c2.+1|}) *) (* _ , +1 *)
-    | Se, GState c1    0     d1 d2 f =>
-          GState c1.+1 0     d1 d2 f (* (Se, {|c1.+1; 0    |}) *) (* +1, _  *)
-  end.
-
-   (* Similarly, words in B (or length 3*(k1 + k2) can be generated by taking: *)
-   (* - a Dyck word d1 on (NSe, W) of lenght 3*k1 (the closing parenthesis is the *)
-   (* concatenation of letters Se and W); *)
-   (* - shuffled with a Dyck word d2 on (N, Se) of length 2*k2 (letters can be *)
-   (* inserted between the adjacent N and Se of d1); *)
-   (* - with k2 letters N arbitrarily inserted in the resulting entanglement of d1 *)
-   (* and d2. *)
-
-   (* An other way to generate words in A is by taking: *)
-   (* - a Dyck word d1' on (NW, Se) of length 3*k1; *)
-   (* - shuffled with a Dyck word d2' on (N, Se) of length 2*k2 (letters can be *)
-   (* inserted between the adjacent N and Se of d1); *)
-   (* - with k2 letters W arbitrarily inserted in the resulting entanglement of d1 *)
-   (* and d2. *)
-
-
-
-Definition AfromB  w :=
-  pairmap A2Bout {|0; 0|}
-          (rev (scanl tB2A {|0; 0|} (rev w))).
-
-(* Definition AfromB l w := *)
-(*   pairmap A2Bout (foldl tB2A {|0; 0|} (rcons (rev w) l)) *)
-(*           (rev ({|0; 0|} :: (scanl tB2A {|0; 0|} (rev w)))). *)
-
-Eval compute in AfromB [:: W; N; Se].
-(* A few computations to see the translation at work: *)
-
-Eval compute in A2B [:: N; W; Se]. (* [:: N; Se; W] *)
-Eval compute in A2B [:: N; Se; W]. (* [:: N; Se; N] *)
-Eval compute in A2B [:: W; N; Se]. (* [:: N; N; Se] *)
-
-
-Eval compute in B2A [:: N; Se; W]. (* [:: N; W; Se] *)
-Eval compute in B2A [:: N; Se; N]. (* [:: N; Se; W] *)
-Eval compute in B2A [:: N; N; Se]. (* [:: W; N; Se] *)
-
-
-Lemma foo :
-
-
-(* ****)
-
-
-
-Lemma B_final_state w : w \in Bword -> foldl tB2A {|0; 0|} (rev w) = {|0; 0|}.
-Proof.
-case: w => [| l w] // Blw.
-rewrite rev_cons foldl_rcons.
-move: (pB_gtB2A_inv (rev w) gb0); rewrite /= -(state_of_foldl_gtB2A _ 0 0 0 0) /=.
-rewrite !count_rev !addn0.
-move: (foldl _ _ _) => [] c1 c2 d1 d2 f o /= [eN eSe eW].
-case/BwordP: Blw => _.
-case: l => /=; rewrite !add0n !add1n eN eSe eW.
-rewrite -![d1 + _ + _]addnA subnDl !addnA.
-rewrite subSn; last admit.
-rewrite subnDl.
-
-
-case/lastP: w => [|w l] //.
-case/BwordP=> pBwl eWl.
-have pBw := pB_rcons pBwl.
-rewrite rev_rcons /=.
-have {pBwl} : #W (rcons w l) <= #Se (rcons w l) <= #N (rcons w l). admit.
-move: eWl; rewrite !count_mem_rcons.
-case: l => /= => e le.
-  rewrite-[tB2A {|0; 0|} N]/({|0; 0|}).
-  move: (pB_gtB2A_inv (rev w) g0); rewrite /= -(state_of_foldl_gtB2A _ 0 0 0) /= !addn0.
-rewrite !count_rev. move: (foldl _ _ _) => [] c1 c2 d1 d2 f /= [eN eSe eW].
-rewrite subnDl in e.
-rewrite leq_add2l in le2.
-move/(leq_sub2r c1): le2; rewrite subnn.
-
-
-
-(* ok below *)
-Definition gtB2A_ (g : gstate)  (l : letter) : gstate :=
-match l, g with
-  |W,  GState c1     c2    d o f  =>  GState c1     c2.+1     d    o    f
-  |Se, GState c1     c2.+1 d o f  =>  GState c1.+1  c2        d    o.+1 f
-  |Se, GState c1     0     d o f  =>  GState c1.+1  0         d    o    f
-  |N,  GState c1.+1  c2    d o f  =>  GState c1     c2        d.+1 o    f
-  |N,  GState 0      c2    d o f  =>  GState 0      c2        d    o    f.+1
-end.
-
-Definition gtB2A := nosimpl gtB2A_.
-
-Lemma pB_gtB2A_inv w gi (g := foldl gtB2A gi w) :
-  [/\
-#N  w + dy1 gi + free gi =
-        dy1 g  + free g   ,
-#Se w + dy1 gi + ct1 gi  =
-        dy1 g  + ct1 g                       &
-#W  w + dy2 gi + ct2 gi =
-        dy2 g  + ct2 g
+Lemma gtB2AP wi gi (g := foldl gtB2A gi wi) (wo := gB2A_from gi wi) :
+[/\
+#N  wi + freeb gi = #N  wo + freeb g,
+#Se wi + ctb2 g = #Se wo + ctb2 gi &
+#W  wi + ctb2 gi  + freeb g = #W  wo + freeb gi  + ctb2 g
 ].
 Proof.
-rewrite {}/g; elim/last_ind: w => [| w l] /= => //.
-rewrite foldl_rcons /=; move: (foldl gtB2A gi w) => gf [eN eSe eW].
-case: l; rewrite !count_mem_rcons !eqxx /=.
-- rewrite !addSn {}eN {}eSe {}eW.
-  by case: gf => [] [|c1] [|c2] d o f /=; rewrite !addnS.
-- rewrite !addSn {}eN {}eSe {}eW.
-  by case: gf => [] [|c1] [|c2] d o f /=; rewrite !addnS.
-- rewrite !addSn {}eN {}eSe {}eW.
-  by case: gf => [] [|c1] [|c2] d o f /=; rewrite !addnS.
-Qed.
-
-(* Lemma pB_gtB2A_inv w gi (g := foldl gtB2A gi (rev w)) : *)
-(*   [/\ *)
-(* #N  w + dy1 gi + free gi = *)
-(*         dy1 g  + free g   , *)
-(* #Se w + dy1 gi + ct1 gi  = *)
-(*         dy1 g  + ct1 g                       & *)
-(* #W  w + dy2 gi + ct2 gi = *)
-(*         dy2 g  + ct2 g *)
-(* ]. *)
-(* Proof. *)
-(* rewrite {}/g; elim/last_ind: w gi => [| w l ihw] /= gi => //. *)
-(* rewrite rev_rcons /=. have {ihw} [<- <- <- ] := (ihw (gtB2A gi l)). *)
-(* case: l; rewrite !count_mem_rcons !eqxx /=. *)
-(* - by case: gi => [] [|c1] [|c2] d o f /=; rewrite !addnS !addSn ?addn0. *)
-(* - by case: gi => [] [|c1] [|c2] d o f /=; rewrite !addnS !addSn ?addn0. *)
-(* - by case: gi => [] [|c1] [|c2] d o f /=; rewrite !addnS !addSn ?addn0. *)
-(* Qed. *)
-
-Lemma state_of_foldl_gtB2A s d1 d2 f w (g := mkGState s d1 d2 f) :
-  state_of_gstate (foldl gtB2A g w) = foldl tB2A s w.
-Proof.
-have -> : s = state_of_gstate g by rewrite {}/g; case: s => [] [].
-elim: w g => [|h w ihw] //= g; rewrite {}ihw; congr foldl.
-by case: g=> c1 c2* {w} /=; case: h => //=; case: c1 => * //; case: c2 => *.
-Qed.
-
-Lemma B_final_state w : w \in Bword -> foldl tB2A {|0; 0|} (rev w) = {|0; 0|}.
-Proof.
-case/BwordP=> pBw.
-have /andP : #W w <= #Se w <= #N w.
-  by move/pBwordP/(_ (size w)): pBw; rewrite take_size.
-move: (pB_gtB2A_inv (rev w) g0); rewrite /= -(state_of_foldl_gtB2A _ 0 0 0) /= !addn0.
-rewrite !count_rev; move: (foldl _ _ _) => [] c1 c2 d1 d2 f /= [-> -> ->] [le1 le2] /eqP e.
-rewrite subnDl in e.
-
-rewrite leq_add2l in le2.
-move/(leq_sub2r c1): le2; rewrite subnn.
-
-
-
-suff : (c1 == 0) && (c2 == 0) by case/andP=> /eqP-> /eqP->.
-rewrite subnDl in e.
-rewrite leq_add2l in le2.
-move/(leq_sub2r c1): le2.
-rewrite subnn.
-rewrite leq_eqVlt.
-case/orP=> h.
-  rewrite -(eqP h) subn_eq0 in e. admit.
-move: h. rewrite -(eqP e) subn_gt0.
-Search _ (_ - _ > 0).
-
-apply: contraLR e.
-rewrite -addnA addnC; move/(canRL (addnK _)); rewrite subnn.
-by case: c1 => [|?] //; case: c2.
-Qed.
-
-Theorem A2BK : {in Aword, cancel A2B B2A}.
-Proof. apply: A2BK_; [exact: pA_noex | exact: A_final_state]. Qed.
- *)
+have [eN1 eSe1 eW1] := gtB2A_inv wi gi; have := gB2A_from_inv wi gi.
+rewrite /g0 -/wo; case=> [eN2 eSe2 sW2]; split.
+- apply/eqP; rewrite -(eqn_add2r ( dyb1 gi + dyb2 gi)) addnAC addnA eN1 -eN2.
+  by apply/eqP; rewrite [RHS]addnAC addnA.
+- apply/eqP.
+  move: eSe2. rewrite [_ +  ctb1 g]addnAC -eSe1.
+  rewrite [_ +  ctb1 gi]addnAC [_  + ctb2 gi]addnC  [X in _ = X]addnC !addnA.
+  by move/eqP; rewrite !eqn_add2r addnC [X in _ == X]addnC eq_sym.
+Admitted.

@@ -1,8 +1,8 @@
-Require Import ssreflect ssrfun ssrbool eqtype ssrnat seq.
-Require Import choice tuple fintype finfun finset.
-Require Import bigop ssralg ssrnum poly ssrint.
+From mathcomp Require Import ssreflect ssrfun ssrbool eqtype ssrnat seq.
+From mathcomp Require Import choice tuple fintype finfun finset.
+From mathcomp Require Import bigop ssralg ssrnum poly ssrint.
 
-Require Import monad words words.
+Require Import words words.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
