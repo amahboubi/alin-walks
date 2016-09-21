@@ -125,7 +125,7 @@ Definition Aword (w : seq letter) : bool :=
   [&& (pAword w), #N w == #Se w & #Se w == #W w].
 
 Lemma AwordP w :
-  reflect [/\ (pAword w), #N w = #Se w & #Se w = #W w] (w \in Aword).
+  reflect [/\ w \in pAword, #N w = #Se w & #Se w = #W w] (w \in Aword).
 Proof. by apply: (iffP and3P); case=> pAw /eqP-> /eqP->. Qed.
 
 Lemma ApAword l : l \in Aword -> l \in pAword. Proof. by case/and3P. Qed.
@@ -349,15 +349,27 @@ Eval compute in B2A [:: N; N; Se]. (* [:: W; N; Se] *)
 
 (* A2B and B2A preserve size *)
 
-Lemma sizeA2B w : size (A2B w) = size w.
+Lemma sizeA2B_from c w : size (A2B_from c w) = size w.
 Proof. by rewrite /= size_pairmap size_scanl. Qed.
 
+Lemma sizeB2A_from c w : size (B2A_from c w) = size w.
+Proof. by rewrite /= size_pairmap size_scanl. Qed.
+
+Lemma sizeA2B w : size (A2B w) = size w.
+Proof. by exact: sizeA2B_from. Qed.
+
 Lemma sizeB2A w : size (B2A w) = size w.
-Proof. by rewrite /= size_rev size_pairmap size_scanl size_rev. Qed.
+Proof. by rewrite /= size_rev sizeB2A_from size_rev. Qed.
 
 
 (*--- We prove that #A = #B by showing that A2B (resp. B2A) sends A (resp. B)
   on B (resp. A) and is a right inverse of B2A (resp. A2B). ---*)
+
+Definition Atuple n : pred (n.-tuple letter) :=
+ [pred w : n.-tuple letter | Aword w].
+
+Definition Btuple n : pred (n.-tuple letter) :=
+ [pred w : n.-tuple letter | Bword w].
 
 Section CardinalsEquality.
 
@@ -368,15 +380,11 @@ Hypothesis B2AK : {in Aword, cancel A2B B2A}.
 Hypothesis BB2A : forall w, w \in Aword -> A2B w \in Bword.
 Hypothesis AA2B : forall w, w \in Bword -> B2A w \in Aword.
 
+
 Variable n : nat.
 
-Definition Atuple : pred (n.-tuple letter) :=
- [pred w : n.-tuple letter | Aword w].
 
-Definition Btuple : pred (n.-tuple letter) :=
- [pred w : n.-tuple letter | Bword w].
-
-Lemma AB_eq_card_under_hyps : #|Atuple| = #|Btuple|.
+Lemma AB_eq_card_under_hyps : #|@Atuple n| = #|@Btuple n|.
 Proof.
 have sizeA2Bt (w : n.-tuple letter) : size (A2B w) == n.
   by rewrite sizeA2B size_tuple.
@@ -384,15 +392,15 @@ have sizeB2At (w : n.-tuple letter) : size (B2A w) == n.
   by rewrite sizeB2A size_tuple.
 pose A2Bt (w : n.-tuple letter) : n.-tuple letter := Tuple (sizeA2Bt w).
 pose B2At (w : n.-tuple letter) : n.-tuple letter := Tuple (sizeB2At w).
-have BB2At : [seq A2Bt x | x in Atuple] \subset Btuple.
+have BB2At : [seq A2Bt x | x in @Atuple n] \subset @Btuple n.
   by apply/subsetP=> w /imageP [w' Aw' ->]; apply: BB2A.
-have AA2Bt : [seq B2At x | x in Btuple] \subset Atuple.
+have AA2Bt : [seq B2At x | x in @Btuple n] \subset @Atuple n.
   by apply/subsetP=> w /imageP [w' Bw' ->]; apply: AA2B.
 apply/eqP; rewrite eqn_leq.
-have /card_in_image {1}<- : {in Atuple &, injective A2Bt}.
+have /card_in_image {1}<- : {in @Atuple n &, injective A2Bt}.
   case=> [s sizes] [t sizet] /B2AK /= As /B2AK /= At [] est; apply/val_inj.
   by rewrite /= -As -At est.
-suff /card_in_image {2}<- : {in Btuple &, injective B2At}.
+suff /card_in_image {2}<- : {in @Btuple n &, injective B2At}.
   by rewrite !subset_leq_card.
 case=> [s sizes] [t sizet] /A2BK /= Bs /A2BK /= Bt [] est; apply/val_inj.
 by rewrite /= -Bs -Bt est.
@@ -578,6 +586,8 @@ end.
 Definition gtA2B := nosimpl gtA2B_.
 
 (* Forgeting the ghost information in a list of reached states *)
+
+
 Lemma state_of_foldl_gtA2B s d1 d2 f w (g := mkGState s d1 d2 f) :
   state_of_gstate (foldl gtA2B g w) = foldl tA2B s w.
 Proof.
@@ -585,6 +595,7 @@ have -> : s = state_of_gstate g by rewrite {}/g; case: s => [] [].
 elim: w g => [|h w ihw] //= g; rewrite {}ihw; congr foldl.
 by case: g=> c1 c2* {w} /=; case: h => //=; case: c1 => * //; case: c2 => *.
 Qed.
+
 
 (* Invariant for gtA2B. By brute force case analysis excepy for the only *)
 (* interesting case of the (tail) induction on w is, i.e. when it ends with Se:*)
@@ -967,7 +978,15 @@ match l, g with
   |N,  Gbstate c1.+1  c2    d1 d2 f  0    =>  Gbstate c1     c2     d1    d2.+1 f    0     (* N *)
   |N,  Gbstate 0      c2    d1 d2 f  o    =>  Gbstate 0      c2     d1    d2    f.+1 o     (* W *)
 end.
+
+
 Definition gtB2A := nosimpl gtB2A_.
+
+Lemma gtB2A_B2A g c l : state_of_gbstate g = c ->
+  state_of_gbstate (gtB2A g l) = tB2A c l.
+Proof.
+by case: g=> c1 c2 d1 d2 f o /= <-; case: l; case: c2; case: c1; case: o.
+Qed.
 
 Lemma gtB2A_inv w gi (g := foldl gtB2A gi w) :
   [/\
@@ -992,14 +1011,14 @@ Qed.
 
 
 
-Lemma state_of_foldl_gtB2A s d1 d2 f o w (g := mkGbstate s d1 d2 f o) :
-  state_of_gbstate (foldl gtB2A g w) = foldl tB2A s w.
+Lemma state_of_foldl_gtB2A c g w : state_of_gbstate g = c ->
+  state_of_gbstate (foldl gtB2A g w) = foldl tB2A c w.
 Proof.
-have -> : s = state_of_gbstate g by rewrite {}/g; case: s => [] [].
+move<-.
 elim: w g => [|h w ihw] //= g; rewrite {}ihw; congr foldl.
-by case: g=> c1 c2 ? ? ? [|og] {w} /=; case: h; case: c1 => *; case: c2 => *.
+case: g=> c1 c2 ? ? ? o {w} /=.
+by case: h => //=; case: c1 => * //; case: c2 => *; case: o.
 Qed.
-
 
 Definition gB2Aout (gi gf : gbstate) : letter :=
   let: (Gbstate ci1 ci2 _ _ _ _) := gi in
@@ -1011,6 +1030,12 @@ Definition gB2Aout (gi gf : gbstate) : letter :=
   (* else if (cf1 == ci1.+1) && (cf2 == 0) && (ci2 == 0) then Se *)
   else Se (* junk *).
 
+Lemma gB2Aout_gB2A gi gf ci cf :
+  state_of_gbstate gi = ci -> state_of_gbstate gf = cf ->
+  gB2Aout gi gf = B2Aout ci cf.
+Proof. by case: gi=> ? ? ? ? ? ?/= <-; case: gf => ? ? ? ? ? ? /= <-. Qed.
+
+
 Definition gB2Astates (g : gbstate) (w : seq letter) : seq gbstate :=
   scanl gtB2A g w.
 
@@ -1021,6 +1046,15 @@ Definition gB2A_from (g : gbstate) (w : seq letter) : seq letter :=
 
 Arguments gB2A_from / g w.
 
+Lemma gB2A_from_B2A g c w : state_of_gbstate g = c ->
+  gB2A_from g w = B2A_from c w.
+Proof.
+elim: w c g => [|l w ihw] //= c g hgc.
+rewrite -/(B2A_from (tB2A c l) w) -/(gB2A_from (gtB2A g l) w).
+have h : state_of_gbstate (gtB2A g l) = tB2A c l by exact: gtB2A_B2A.
+by rewrite (ihw (tB2A c l)) //; congr (_ :: _); apply: (gB2Aout_gB2A hgc).
+Qed.
+
 (* In order to prove that reading a word in A produces a word in B, we
    need another invariant. *)
 
@@ -1029,8 +1063,6 @@ Lemma gB2A_from_rcons g w l : gB2A_from g (rcons w l) =
 Proof.
 by rewrite /= scanl_rcons -cats1 pairmap_cat /= last_scanl foldl_rcons cats1.
 Qed.
-
-
 
 Lemma gB2A_from_inv wi gi (g := foldl gtB2A gi wi) (wo := gB2A_from gi wi) :
   [/\
@@ -1062,7 +1094,8 @@ case: l.
   + by rewrite !addSn ?addnS; move=> -> -> ->.
 Qed.
 
-Lemma gtB2AP wi gi (g := foldl gtB2A gi wi) (wo := gB2A_from gi wi) :
+
+Lemma gB2AP wi gi (g := foldl gtB2A gi wi) (wo := gB2A_from gi wi) :
 [/\
 #N  wi + freeb gi = #N  wo + freeb g,
 #Se wi + ctb2 g = #Se wo + ctb2 gi &
@@ -1070,11 +1103,84 @@ Lemma gtB2AP wi gi (g := foldl gtB2A gi wi) (wo := gB2A_from gi wi) :
 ].
 Proof.
 have [eN1 eSe1 eW1] := gtB2A_inv wi gi; have := gB2A_from_inv wi gi.
-rewrite /g0 -/wo; case=> [eN2 eSe2 sW2]; split.
-- apply/eqP; rewrite -(eqn_add2r ( dyb1 gi + dyb2 gi)) addnAC addnA eN1 -eN2.
+rewrite /g0 -/wo; case=> [eN2 eSe2 eW2].
+split => [{eSe1 eSe2 eW1 eW2}|{eN1 eN2 eW1 eW2} | {eSe1 eSe2 eN1 eN2}].
+- apply/eqP; rewrite -(eqn_add2r (dyb1 gi + dyb2 gi)) addnAC addnA eN1 -eN2.
   by apply/eqP; rewrite [RHS]addnAC addnA.
-- apply/eqP.
-  move: eSe2. rewrite [_ +  ctb1 g]addnAC -eSe1.
+- apply/eqP; move: eSe2; rewrite [_ +  ctb1 g]addnAC -eSe1.
   rewrite [_ +  ctb1 gi]addnAC [_  + ctb2 gi]addnC  [X in _ = X]addnC !addnA.
   by move/eqP; rewrite !eqn_add2r addnC [X in _ == X]addnC eq_sym.
-Admitted.
+- apply/eqP; rewrite -(eqn_add2r (dyb1 gi + ob gi)).
+  rewrite addnAC [_ + _ + (_ + _)]addnAC addnA eW1 [X in _ == X]addnAC.
+  by rewrite [_ + _ + (_ + _)]addnAC addnA eW2 -!addnA !eqn_add2l addnC.
+Qed.
+
+Lemma take_B2A n w (w2 := drop n w) (c := foldl tB2A {|0; 0|} (rev w2)) :
+  take n (B2A w) = rev (B2A_from c (rev (take n w))).
+Proof.
+rewrite /B2A -[w](cat_take_drop n) rev_cat /B2A_from /B2Astates.
+rewrite scanl_cat pairmap_cat rev_cat last_scanl.
+set w1 := take _ w.
+rewrite -/(B2A_from c (rev w1)) -/(B2A_from {|0; 0|} (rev w2)).
+case: (ltnP n (size w)) => hn.
+  rewrite take_size_cat; last by rewrite size_rev sizeB2A_from size_rev size_take hn.
+  by rewrite take_size_cat // size_take hn.
+have -> : w1 = w by rewrite /w1 take_oversize.
+have -> : w2 = [::] by rewrite /w2 drop_oversize.
+rewrite take_cat ltnNge size_rev sizeB2A_from size_rev hn /=.
+by rewrite take_cat ltnNge hn /= drop_oversize //= !cats0.
+Qed.
+
+Lemma gB_final_state w : w \in pBword ->
+  state_of_gbstate (foldl gtB2A gb0 (rev w)) = {|0; 0|}.
+Proof. rewrite (@state_of_foldl_gtB2A {|0; 0|}) //; exact: B_final_state. Qed.
+
+Lemma pA_B2A_pB w : w \in pBword -> B2A w \in pAword.
+Proof.
+move=> hl; apply/pAwordP => n.
+rewrite take_B2A !count_rev.
+set c := foldl _ _ _; set w1 := take _ w.
+pose gc := foldl gtB2A gb0 (rev (drop n w)).
+have [] := gB2A_from_inv (rev w1) gc.
+set gf := foldl _ _ _.
+have [-> ->] : (ctb1 gf = 0) /\ (ctb2 gf = 0).
+  suff : state_of_gbstate gf = {|0; 0|} by case: gf => c1 c2 ? ? ? ? /= [-> ->].
+  suff -> : gf = foldl gtB2A gb0 (rev w) by exact: gB_final_state.
+  by rewrite /gf /gc -foldl_cat -rev_cat cat_take_drop.
+rewrite !addn0.
+have -> : (gB2A_from gc (rev w1)) = (B2A_from c (rev w1)).
+  apply: gB2A_from_B2A; rewrite /c /gc; exact: state_of_foldl_gtB2A.
+set N := #N _; set S := #Se _.
+move=> eN eS _; move/eqP: eS.
+rewrite -eN -addnA addnAC eqn_add2r addnAC eqn_add2r; move/eqP<-.
+by rewrite leq_addr.
+Qed.
+
+Theorem A_B2A_B w : w \in Bword -> B2A w \in Aword.
+Proof.
+case/BwordP=> pBw e; apply/AwordP.
+rewrite pA_B2A_pB //.
+have := gB2AP (rev w) gb0.
+have := gB2A_from_inv (rev w) gb0.
+rewrite !count_rev /=; set g := foldl _ _ _; set wo := gB2A_from gb0 (rev w).
+have [-> ->] : ctb1 g = 0 /\ ctb2 g = 0.
+  suff : state_of_gbstate g = {|0; 0|} by case: g => c1 c2 ? ? ? ? /= [-> ->].
+  exact: gB_final_state.
+rewrite !addn0 -/(B2A_from _ (rev w)) -(@gB2A_from_B2A gb0) // -/wo -[pairmap _ _ _]/wo.
+case=> eN1 eS1 eW1 [eN2 eS2 eW2]; split=> //; first by rewrite eN1 eS1.
+have {e} e : #N w + #W w = #Se w + #Se w.
+  have /andP[hWSe hSeN] : #W w <= #Se w <= #N w.
+    by move/pBwordP/(_ (size w)):pBw; rewrite take_size.
+  apply/eqP; rewrite -(subnK hSeN) addnAC eqn_add2r -{2}(subnK hWSe) eqn_add2r.
+  by apply/eqP.
+by apply/eqP; rewrite -eW2 -(eqn_add2l (#N w)) addnA e eN2 eN1 -eS1 -eS2 addnAC.
+Qed.
+
+Theorem AB_eq_card n : #|@Atuple n| = #|@Btuple n|.
+Proof.
+apply: AB_eq_card_under_hyps.
+- apply: B2AK.
+- apply: A2BK.
+- apply: B_A2B_A.
+- apply: A_B2A_B.
+Qed.
