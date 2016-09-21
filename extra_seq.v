@@ -4,6 +4,18 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
+(* Properties holding 'for any prefix'*)
+Lemma rcons_2_taken {T} (p : seq T -> Prop) :
+  p [::] -> (forall t w, p (rcons w t) -> p w) -> (forall w n, p w -> p (take n w)).
+Proof.
+move=> p0 prcons; elim/last_ind => // s t ihs n.
+rewrite -cats1 take_cat; case: (ltnP n (size s)) => [ltnss |].
+ by rewrite cats1 => pst; apply: ihs; apply: (prcons _ _ pst).
+rewrite leq_eqVlt; case/orP => [/eqP-> |].
+   rewrite subnn /= cats0 cats1; exact: prcons.
+by rewrite -subn_gt0 => hsn; rewrite take_oversize // cats1.
+Qed.
+
 
 (* This should ultimately go to the MathComp library... *)
 
