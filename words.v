@@ -193,6 +193,76 @@ Proof. by apply: (iffP andP); case=> pAw /eqP->. Qed.
 Lemma Yam_balanced_Yam w : w \in balanced_Yam -> w \in Yamanouchi.
 Proof. by case/andP. Qed.
 
+
+
+(* (Motzkin_tuple n) (resp. (balanced_Yam n)) is the type of Motzkin
+   (resp. balanced Yamanouchi) words on alphabet letter. *)
+Definition Motzkin_tuple n : pred (n.-tuple letter) :=
+ [pred w : n.-tuple letter | Motzkin w].
+
+Arguments Motzkin_tuple n _ : clear implicits.
+
+Definition balanced_Yam_tuple n : pred (n.-tuple letter) :=
+ [pred w : n.-tuple letter | balanced_Yam w].
+
+Arguments balanced_Yam_tuple n _ : clear implicits.
+
+(* We want to prove that for any n, there is the same number of Motzkin words
+   of size n than of balanced Yamanouchi words of size n. We proceed by
+   showing that:
+   - for a Motzkin word, M2bY (bY2M w) = w
+   - for a Motzkin word, (bY2M w) is a balanced Yamanouchi word
+   - for a balanced Yamanouchi word, bY2M (M2bY w) = w
+   - for a balanced Yamanouchi word, (M2bY w) is a Motzkin word
+*)
+
+Section CardinalsEquality.
+
+Variables bY2M_ M2bY_ : seq letter -> seq letter.
+
+Hypothesis size_M2bY_ : forall w : seq letter, size (M2bY_ w) = size w.
+Hypothesis size_bY2M_ : forall w : seq letter, size (bY2M_ w) = size w.
+
+(* Suppose that for a balanced Yamanouchi word, bY2M (M2bY w) = w *)
+Hypothesis M2bYK : {in balanced_Yam, cancel bY2M_ M2bY_}.
+
+(* Suppose that  for a Motzkin word, M2bY (bY2M w) = w *)
+Hypothesis bY2MK : {in Motzkin, cancel M2bY_ bY2M_}.
+
+(* Suppose that for a Motzkin word, (bY2M w) is a balanced Yamanouchi word *)
+Hypothesis bYam_M2bY : forall w, w \in Motzkin -> M2bY_ w \in balanced_Yam.
+
+(* for a balanced Yamanouchi word, (M2bY w) is a Motzkin word *)
+Hypothesis Motz_bY2M : forall w, w \in balanced_Yam -> bY2M_ w \in Motzkin.
+
+(* Let n be an arbitrary size *)
+Variable n : nat.
+
+(* Then we get the desired equality *)
+Lemma eq_card_Motzkin_bYam_suff : #|Motzkin_tuple n| = #|balanced_Yam_tuple n|.
+Proof.
+have size_M2bYt (w : n.-tuple letter) : size (M2bY_ w) == n.
+  by rewrite size_M2bY_ size_tuple.
+have size_bY2Mt (w : n.-tuple letter) : size (bY2M_ w) == n.
+  by rewrite size_bY2M_ size_tuple.
+pose M2bYt (w : n.-tuple letter) : n.-tuple letter := Tuple (size_M2bYt w).
+pose bY2Mt (w : n.-tuple letter) : n.-tuple letter := Tuple (size_bY2Mt w).
+have sub_bY : [seq M2bYt x | x in Motzkin_tuple n] \subset balanced_Yam_tuple n.
+  by apply/subsetP=> w /imageP [? ? ->]; apply: bYam_M2bY.
+have sub_M : [seq bY2Mt x | x in balanced_Yam_tuple n] \subset Motzkin_tuple n.
+  by apply/subsetP=> w /imageP [? ? ->]; apply: Motz_bY2M.
+apply/eqP; rewrite eqn_leq.
+have /card_in_image {1}<- : {in Motzkin_tuple n &, injective M2bYt}.
+  case=> [s sizes] [t sizet] /bY2MK /= Ms /bY2MK /= Mt [] est; apply/val_inj.
+  by rewrite /= -Ms -Mt est.
+suff /card_in_image {2}<- : {in balanced_Yam_tuple n &, injective bY2Mt}.
+  by rewrite !subset_leq_card.
+case=> [s sizes] [t sizet] /M2bYK /= bYs /M2bYK /= bYt [] est; apply/val_inj.
+by rewrite /= -bYs -bYt est.
+Qed.
+
+End CardinalsEquality.
+
 (* We want to show that for a given n, the number of Motzkin words of size n
    is the same as the number of balanced Yamanouchi words of size n.
    For this purpose, we construct a size-preserving bijection between the
@@ -309,17 +379,103 @@ Definition t_bY2M (c : state) (l : letter) : state :=
 
 Arguments t_bY2M c l : simpl never.
 
-(* (M2bY_states c w) (resp. (bY2M_states c w) is the sequence of states
+(* (M2bY_state c w) (resp. (bY2M_state c w) is the state
+ reached when reading w from c in the transducer M2bY (resp. bY2M)*)
+Definition M2bY_state (c : state) (w : seq letter) : state :=
+  foldl t_M2bY c w.
+
+Definition bY2M_state (c : state) (w : seq letter) : state :=
+  foldl t_bY2M c w.
+
+(* Properties of M2bY_state (resp. bY2M_state) inherited from those of foldl *)
+
+(*The state reached from c after reading  (rcons w l) is the one reached from
+  "the state reached from c after reading w" after reading l *)
+Lemma M2bY_state_rcons (c : state) (w : seq letter) (l : letter) :
+  M2bY_state c (rcons w l) = t_M2bY (M2bY_state c w) l.
+Proof. exact: foldl_rcons. Qed.
+
+Lemma bY2M_state_rcons (c : state) (w : seq letter) (l : letter) :
+  bY2M_state c (rcons w l) = t_bY2M (bY2M_state c w) l.
+Proof. exact: foldl_rcons. Qed.
+
+(*The state reached from c after reading  (w1 ++ w2) is the one reached from
+  "the state reached from c after reading w1" after reading w2 *)
+
+Lemma M2bY_state_cat (c : state) (w1 w2 : seq letter) :
+  M2bY_state c (w1 ++ w2) = M2bY_state (M2bY_state c w1) w2.
+Proof. exact: foldl_cat. Qed.
+
+Lemma bY2M_state_cat (c : state) (w1 w2 : seq letter) :
+  bY2M_state c (w1 ++ w2) = bY2M_state (bY2M_state c w1) w2.
+Proof. exact: foldl_cat. Qed.
+
+(* *_state functions in terms of foldr. Don know yet if is usefull. *)
+Lemma M2bY_state_rev (c : state) (w : seq letter) :
+  M2bY_state c (rev w) = foldr (fun x => t_M2bY^~ x) c w.
+Proof. exact: foldl_rev. Qed.
+
+Lemma bY2M_state_rev (c : state) (w : seq letter) :
+  bY2M_state c (rev w) = foldr (fun x => t_bY2M^~ x) c w.
+Proof. exact: foldl_rev. Qed.
+
+
+(* (M2bY_states_seq c w) (resp. (bY2M_states c w) is the sequence of states
  followed when reading w from c in the transducer M2bY (resp. bY2M)*)
-Definition M2bY_states (c : state) (w : seq letter) : seq state :=
+Definition M2bY_states_seq (c : state) (w : seq letter) : seq state :=
   scanl t_M2bY c w.
 
-Arguments M2bY_states / c w.
+(* Arguments M2bY_states_seq / c w. *)
 
-Definition bY2M_states  (c : state) (w : seq letter) : seq state :=
+Definition bY2M_states_seq  (c : state) (w : seq letter) : seq state :=
   scanl t_bY2M c w.
 
-Arguments bY2M_states / c w.
+(* Arguments bY2M_states_seq / c w. *)
+
+
+(* Properties of M2bY_states_seq (resp. bY2M_states_seq) obtained from those of
+  scanl. *)
+Lemma last_M2bY_states_seq (c : state) (w : seq letter) :
+  last c (M2bY_states_seq c w) = M2bY_state c w.
+Proof. exact: last_scanl. Qed.
+
+Lemma M2bY_states_seq_rcons (c : state) (w : seq letter) (l : letter) :
+  M2bY_states_seq c (rcons w l) =
+  rcons (M2bY_states_seq c w) (M2bY_state c (rcons w l)).
+Proof. exact: scanl_rcons. Qed.
+
+Lemma take_M2bY_states_seq (c : state) (w : seq letter) (n : nat) :
+take n (M2bY_states_seq c w) = M2bY_states_seq c (take n w).
+Proof. exact: take_scanl. Qed.
+
+Lemma size_M2bY_states_seq c w : size (M2bY_states_seq c w) = size w.
+Proof. by rewrite  size_scanl. Qed.
+
+Lemma M2bY_states_seq_cat c w1 w2 :
+  M2bY_states_seq c (w1 ++ w2) =
+  M2bY_states_seq c w1 ++ M2bY_states_seq (M2bY_state c w1) w2.
+Proof. exact: scanl_cat. Qed.
+
+Lemma last_bY2M_states_seq (c : state) (w : seq letter) :
+  last c (bY2M_states_seq c w) = bY2M_state c w.
+Proof. exact: last_scanl. Qed.
+
+Lemma bY2M_states_seq_rcons (c : state) (w : seq letter) (l : letter) :
+  bY2M_states_seq c (rcons w l) =
+  rcons (bY2M_states_seq c w) (bY2M_state c (rcons w l)).
+Proof. exact: scanl_rcons. Qed.
+
+Lemma take_bY2M_states_seq (c : state) (w : seq letter) (n : nat) :
+take n (bY2M_states_seq c w) = bY2M_states_seq c (take n w).
+Proof. exact: take_scanl. Qed.
+
+Lemma size_bY2M_states_seq c w : size (bY2M_states_seq c w) = size w.
+Proof. by rewrite  size_scanl. Qed.
+
+Lemma bY2M_states_seq_cat c w1 w2 :
+  bY2M_states_seq c (w1 ++ w2) =
+  bY2M_states_seq c w1 ++ bY2M_states_seq (bY2M_state c w1) w2.
+Proof. exact: scanl_cat. Qed.
 
 (* Crucially, for any two states cf and ci, there is a transition in
    transducer M2bY (resp. bY2M) from state ci to state cf, and the output
@@ -345,34 +501,39 @@ Definition bY2M_out (ci cf : state) : letter :=
   else if (ci1 == cf1.+1) && (cf2 == ci2) then N
   else Se (* junk *).
 
+(* It may be useful to name the analogues of these, just swapping arguments,
+   in order to describe the reverse path in the automaton. *)
+Definition M2bY_outV ci cf := M2bY_out cf ci.
+
+Definition bY2M_outV cf ci := bY2M_out ci cf.
 
 (* M2bY (resp. bY2M) is defined from t_M2bY and M2bY_out
   (resp. t_bY2M and bY2M_out) as follows:
    - from a word w and an intial state c, produce the sequence of states
-     (M2bY_states c w) (resp.  (bY2M_states c w));
-   - from sequence (M2bY_states c w) (resp.  (bY2M_states c w)), produce
+     (M2bY_states_seq c w) (resp.  (bY2M_states_seq c w));
+   - from sequence (M2bY_states_seq c w) (resp.  (bY2M_states_seq c w)), produce
     the sequence of corresponding output letters, using bY2M_out
     (resp. M2bY_out).
 M2bY and bY2M take (0, 0) as initial state c.
 *)
 
 Definition M2bY_from (c : state) (w : seq letter) : seq letter :=
-  pairmap M2bY_out c (M2bY_states c w).
+  pairmap M2bY_out c (M2bY_states_seq c w).
 
-Arguments M2bY_from / c w.
+Arguments M2bY_from / c w : simpl never.
 
 Definition M2bY := M2bY_from {|0; 0|}.
 
-Arguments M2bY /.
+Arguments M2bY / : simpl never.
 
 Definition bY2M_from (c : state) (w : seq letter) : seq letter :=
-  pairmap bY2M_out c (bY2M_states c w).
+  pairmap bY2M_out c (bY2M_states_seq c w).
 
-Arguments bY2M_from / c w.
+Arguments bY2M_from / c w : simpl never.
 
 Definition bY2M (w : seq letter) := rev (bY2M_from {|0; 0|} (rev w)).
 
-Arguments bY2M / w.
+Arguments bY2M / w : simpl never.
 
 (* A few computations to see the translation at work: *)
 
@@ -386,103 +547,110 @@ Eval compute in bY2M [:: N; Se; N]. (* [:: N; Se; W] *)
 Eval compute in bY2M [:: N; N; Se]. (* [:: W; N; Se] *)
 
 
-(* Operations reserving the size of sequences *)
-
-Lemma size_M2bY_states c w : size (M2bY_states c w) = size w.
-Proof. by rewrite  size_scanl. Qed.
-
-Lemma size_bY2M_states c w : size (bY2M_states c w) = size w.
-Proof. by rewrite  size_scanl. Qed.
+(* Properties of M2bY_from and M2bY (resp. bY2M_from, bY2M) obtained from those
+ of pairmap (resp. pairmap and rev) *)
 
 Lemma size_M2bY_from c w : size (M2bY_from c w) = size w.
-Proof. by rewrite /M2bY_from size_pairmap size_M2bY_states. Qed.
-
-Lemma size_bY2M_from c w : size (bY2M_from c w) = size w.
-Proof. by rewrite /= size_pairmap size_bY2M_states. Qed.
+Proof. by rewrite /M2bY_from size_pairmap size_M2bY_states_seq. Qed.
 
 Lemma size_M2bY w : size (M2bY w) = size w.
 Proof. by exact: size_M2bY_from. Qed.
 
+Lemma M2bY_from_cat c w1 w2 :
+  M2bY_from c (w1 ++ w2) = M2bY_from c w1 ++ M2bY_from (M2bY_state c w1) w2.
+Proof.
+by rewrite [LHS]/M2bY_from M2bY_states_seq_cat pairmap_cat last_M2bY_states_seq.
+Qed.
+
+Lemma M2bY_from_rcons c w l :
+  M2bY_from c (rcons w l) =
+  rcons (M2bY_from c w) (M2bY_out (M2bY_state c w) (t_M2bY (M2bY_state c w) l)).
+Proof. by rewrite -cats1 M2bY_from_cat cats1. Qed.
+
+Lemma take_M2bY_from c w n : take n (M2bY_from c w) = M2bY_from c (take n w).
+Proof. by rewrite take_pairmap take_M2bY_states_seq. Qed.
+
+Lemma take_M2bY w n : take n (M2bY w) = M2bY (take n w).
+Proof. exact: take_M2bY_from. Qed.
+
+Lemma rev_M2bY_from c w l :
+  rev (M2bY_from c (rcons w l)) =
+  pairmap M2bY_outV (t_M2bY (M2bY_state c w) l)
+  (rcons (rev (M2bY_states_seq c w)) c).
+Proof.
+by rewrite /M2bY_from M2bY_states_seq_rcons rev_pairmap M2bY_state_rcons.
+Qed.
+
+Lemma M2bY_from_cons c w l :
+  M2bY_from c (l :: w) = M2bY_out c (t_M2bY c l) :: M2bY_from (t_M2bY c l) w.
+Proof. by []. Qed.
+
+Lemma M2bY_rcons  w l (c := M2bY_state {|0; 0|} w) :
+  M2bY (rcons w l) = rcons (M2bY w) (M2bY_out c (t_M2bY c l)).
+Proof. by rewrite /M2bY M2bY_from_rcons. Qed.
+
+Lemma size_bY2M_from c w : size (bY2M_from c w) = size w.
+Proof. by rewrite /bY2M_from size_pairmap size_bY2M_states_seq. Qed.
+
 Lemma size_bY2M w : size (bY2M w) = size w.
-Proof. by rewrite /= size_rev size_bY2M_from size_rev. Qed.
+Proof. by rewrite size_rev size_bY2M_from size_rev. Qed.
 
-
-(* (Motzkin_tuple n) (resp. (balanced_Yam n)) is the type of Motzkin
-   (resp. balanced Yamanouchi) words on alphabet letter. *)
-Definition Motzkin_tuple n : pred (n.-tuple letter) :=
- [pred w : n.-tuple letter | Motzkin w].
-
-Arguments Motzkin_tuple n _ : clear implicits.
-
-Definition balanced_Yam_tuple n : pred (n.-tuple letter) :=
- [pred w : n.-tuple letter | balanced_Yam w].
-
-Arguments balanced_Yam_tuple n _ : clear implicits.
-
-(* We want to prove that for any n, there is the same number of Motzkin words
-   of size n than of balanced Yamanouchi words of size n. We proceed by
-   showing that:
-   - for a Motzkin word, M2bY (bY2M w) = w
-   - for a Motzkin word, (bY2M w) is a balanced Yamanouchi word
-   - for a balanced Yamanouchi word, bY2M (M2bY w) = w
-   - for a balanced Yamanouchi word, (M2bY w) is a Motzkin word
-*)
-
-Section CardinalsEquality.
-
-(* Suppose that for a balanced Yamanouchi word, bY2M (M2bY w) = w *)
-Hypothesis M2bYK : {in balanced_Yam, cancel bY2M M2bY}.
-
-(* Suppose that  for a Motzkin word, M2bY (bY2M w) = w *)
-Hypothesis bY2MK : {in Motzkin, cancel M2bY bY2M}.
-
-(* Suppose that for a Motzkin word, (bY2M w) is a balanced Yamanouchi word *)
-Hypothesis bYam_M2bY : forall w, w \in Motzkin -> M2bY w \in balanced_Yam.
-
-(* for a balanced Yamanouchi word, (M2bY w) is a Motzkin word *)
-Hypothesis Motz_bY2M : forall w, w \in balanced_Yam -> bY2M w \in Motzkin.
-
-(* Let n be an arbitrary size *)
-Variable n : nat.
-
-(* Then we get the desired equality *)
-Lemma eq_card_Motzkin_bYam_suff : #|Motzkin_tuple n| = #|balanced_Yam_tuple n|.
+Lemma bY2M_from_cat c w1 w2 :
+  bY2M_from c (w1 ++ w2) = bY2M_from c w1 ++ bY2M_from (bY2M_state c w1) w2.
 Proof.
-have size_M2bYt (w : n.-tuple letter) : size (M2bY w) == n.
-  by rewrite size_M2bY size_tuple.
-have size_bY2Mt (w : n.-tuple letter) : size (bY2M w) == n.
-  by rewrite size_bY2M size_tuple.
-pose M2bYt (w : n.-tuple letter) : n.-tuple letter := Tuple (size_M2bYt w).
-pose bY2Mt (w : n.-tuple letter) : n.-tuple letter := Tuple (size_bY2Mt w).
-have sub_bY : [seq M2bYt x | x in Motzkin_tuple n] \subset balanced_Yam_tuple n.
-  by apply/subsetP=> w /imageP [? ? ->]; apply: bYam_M2bY.
-have sub_M : [seq bY2Mt x | x in balanced_Yam_tuple n] \subset Motzkin_tuple n.
-  by apply/subsetP=> w /imageP [? ? ->]; apply: Motz_bY2M.
-apply/eqP; rewrite eqn_leq.
-have /card_in_image {1}<- : {in Motzkin_tuple n &, injective M2bYt}.
-  case=> [s sizes] [t sizet] /bY2MK /= Ms /bY2MK /= Mt [] est; apply/val_inj.
-  by rewrite /= -Ms -Mt est.
-suff /card_in_image {2}<- : {in balanced_Yam_tuple n &, injective bY2Mt}.
-  by rewrite !subset_leq_card.
-case=> [s sizes] [t sizet] /M2bYK /= bYs /M2bYK /= bYt [] est; apply/val_inj.
-by rewrite /= -bYs -bYt est.
+by rewrite [LHS]/bY2M_from bY2M_states_seq_cat pairmap_cat last_bY2M_states_seq.
 Qed.
 
-End CardinalsEquality.
+Lemma bY2M_from_rcons c w l :
+  bY2M_from c (rcons w l) =
+  rcons (bY2M_from c w) (bY2M_out (bY2M_state c w) (t_bY2M (bY2M_state c w) l)).
+Proof. by rewrite -cats1 bY2M_from_cat cats1. Qed.
 
+Lemma take_bY2M_from c w n : take n (bY2M_from c w) = bY2M_from c (take n w).
+Proof. by rewrite take_pairmap take_bY2M_states_seq. Qed.
 
-(*--- Reduction: we prove that the conditions on M2bY, bY2M can be reduced to
-  assumptions on the states of the transducer(s), whose proofs require
-  introducing ghost variables to state and establish suitable invariants. ---*)
-
-Lemma M2bY_out_t_bY2M s2 lo : M2bY_out (t_bY2M s2 lo) s2 = lo.
+Lemma take_bY2M w n :
+  take n (bY2M w) =
+  rev (bY2M_from (bY2M_state {|0; 0|} (rev (drop n w))) (rev (take n w))).
 Proof.
-by case: lo; case: s2 => [] [[|c1][|c2]] //=; rewrite ?eqxx ?andbF //= ltn_eqF.
+case: (ltnP n (size w)) => [ltns | lesn]; last first.
+  by rewrite [in RHS]take_oversize // drop_oversize //= take_oversize ?size_bY2M.
+rewrite -[in LHS](cat_take_drop n w) /bY2M rev_cat bY2M_from_cat rev_cat.
+by rewrite take_size_cat // size_rev size_bY2M_from size_rev size_take ltns.
 Qed.
 
-Lemma M2bY_out_from_t_bY2M s1 s2 lo : s1 = t_bY2M s2 lo -> lo = M2bY_out s1 s2.
-Proof. by move->; rewrite M2bY_out_t_bY2M. Qed.
+Lemma rev_bY2M_from c w l :
+  rev (bY2M_from c (rcons w l)) =
+  pairmap bY2M_outV (t_bY2M (bY2M_state c w) l)
+  (rcons (rev (bY2M_states_seq c w)) c).
+Proof.
+by rewrite /bY2M_from bY2M_states_seq_rcons rev_pairmap bY2M_state_rcons.
+Qed.
 
+Lemma bY2M_from_cons c w l (cf := bY2M_state c (rev w)) :
+  bY2M_from c (l :: w) =  bY2M_out c (t_bY2M c l) :: bY2M_from (t_bY2M c l) w.
+Proof. by []. Qed.
+
+Lemma bY2M_cons w l (c := bY2M_state {|0; 0|} (rev w)) :
+  bY2M (l :: w) = (bY2M_out c (t_bY2M c l)) :: (bY2M w).
+Proof. by rewrite /bY2M rev_cons bY2M_from_rcons rev_rcons. Qed.
+
+
+(* Now we start studying the various transition functions that we defined per se.
+   In particular, we pove various forms of cancellation properties that will
+   hopefully get lifted as properties of the input/output words of the
+   transducers. *)
+
+Lemma M2bY_out_t_bY2M c lo : M2bY_out (t_bY2M c lo) c = lo.
+Proof.
+by case: lo; case: c => [] [[|c1][|c2]] //=; rewrite ?eqxx ?andbF //= ltn_eqF.
+Qed.
+
+Lemma  t_bY2MK s2 : cancel (t_bY2M s2) (M2bY_outV s2).
+Proof. exact: M2bY_out_t_bY2M. Qed.
+
+Lemma bY2M_states_seqKV c w : pairmap M2bY_outV c (bY2M_states_seq c w) = w.
+Proof. by rewrite (scanlK t_bY2MK). Qed.
 
 (* But there is one degenerated case, which prevents the expected converse
    identities to hold everywhere *)
@@ -494,9 +662,6 @@ Proof.
 by case: li; case: s1 => [] [[|c1][|c2]] //= _; rewrite ?eqxx ?andbF //= ltn_eqF.
 Qed.
 
-Lemma bY2M_out_from_t_M2bY s1 s2 li : noex li s1 ->
-  s2 = t_M2bY s1 li -> bY2M_out s2 s1 = li.
-Proof. move=> nx ->; exact: bY2M_out_t_M2bY. Qed.
 
 (* t_bY2M s2 lo = s1 -> li = bY2M_out s2 s1 -> t_M2bY s1 li = s2. *)
 Lemma t_M2bY_round s2 lo (s1 := t_bY2M s2 lo) : t_M2bY s1 (bY2M_out s2 s1) = s2.
@@ -524,21 +689,28 @@ Lemma bY2M_out_round s1 l (s2 := t_M2bY s1 l) : noex l s1 ->
   bY2M_out s2 (t_bY2M s2 (M2bY_out s1 s2)) = l.
 Proof. by move=> nx; rewrite t_bY2M_round bY2M_out_t_M2bY. Qed.
 
-(* Let cf be the state reached when starting from state ci and reading word wi
-   with automaton bY2M. Let wf := (bY2M_from ci wi) be the word output. Then
-   reading (rev wf) from cf with automaton M2bY produces word wi *)
-Lemma revbY2M_fromK wi ci (cf := foldl t_bY2M ci wi) (wf := bY2M_from ci wi) :
-    M2bY_from cf (rev wf) = rev wi.
+(* Let sf be the state reached when starting from state si and reading word wi
+   with automaton bY2M. Let wf := (bY2M_from si wi) be the word output. Then
+   reading (rev wf) from sf with automaton M2bY produces word wi *)
+
+
+(* Let sf be the state reached when starting from state si and reading word wi
+   with automaton bY2M. Let wf := (bY2M_from si wi) be the word output. Then
+   reading (rev wf) from sf with automaton M2bY produces word wi *)
+
+Lemma revbY2M_fromK wi si (sf := bY2M_state si wi) (wf := bY2M_from si wi) :
+    M2bY_from sf (rev wf) = rev wi.
 Proof.
-rewrite {}/cf {}/wf; elim/last_ind: wi ci => [| w l ihw c] //=.
-set cf := foldl _ _ _.
-rewrite /= scanl_rcons -cats1 pairmap_cat rev_cat /=.
-set s := bY2M_out (last _ _)  _.
-rewrite -/(bY2M_from c w) /= rev_rcons; congr cons; last first.
-  suff {ihw} -> : t_M2bY cf s = foldl t_bY2M c w by apply/ihw.
-  rewrite {}/cf {}/s last_scanl foldl_rcons; exact: t_M2bY_round.
-by rewrite {}/cf {}/s foldl_rcons last_scanl; apply: M2bY_out_round.
+rewrite {}/sf {}/wf; elim/last_ind: wi si => [| w l ihw c] //=.
+rewrite bY2M_state_rcons bY2M_from_rcons !rev_rcons /= M2bY_from_cons.
+by rewrite M2bY_out_round t_M2bY_round ihw.
 Qed.
+
+
+(*--- Reduction: we prove that the conditions on M2bY, bY2M can be reduced to
+  assumptions on the states of the transducer(s), whose proofs require
+  introducing ghost variables to state and establish suitable invariants. ---*)
+
 
 
 Section SufficientConditionsForCancel.
@@ -546,85 +718,50 @@ Section SufficientConditionsForCancel.
 (* We leave as (temporary) hypotheses the facts that requires introducing
    ghost variables: *)
 
-Hypothesis pA_noex : forall l h c,
-   rcons l h \in pre_Motzkin -> noex h (foldl t_M2bY c l).
+Hypothesis pre_Motzkin_noex : forall l w c,
+   rcons l w \in pre_Motzkin -> noex w (M2bY_state c l).
 
 Lemma revM2bY_fromK l c : l \in pre_Motzkin ->
-    rev (bY2M_from (foldl t_M2bY c l) (rev (M2bY_from c l))) = l.
+    rev (bY2M_from (M2bY_state c l) (rev (M2bY_from c l))) = l.
 Proof.
-elim/last_ind: l c => [| l h ihl c pAlh] //=.
-set cf := foldl _ _ _.
-rewrite /= scanl_rcons -cats1 pairmap_cat rev_cat /=.
-set s := M2bY_out _ _.
-rewrite -/(M2bY_from c l) /= rev_cons; congr rcons; last first.
-  rewrite /cf /s foldl_rcons last_scanl; apply: bY2M_out_round; exact: pA_noex.
-suff -> : t_bY2M cf s = foldl t_M2bY c l by apply/ihl/(pre_Motzkin_rcons h).
-  rewrite {}/cf {}/s last_scanl foldl_rcons; exact: t_bY2M_round.
+elim/last_ind: l c => [| w l ihw c pMwl] //=.
+rewrite M2bY_state_rcons M2bY_from_rcons !rev_rcons.
+rewrite bY2M_from_cons bY2M_out_round; last exact: pre_Motzkin_noex.
+rewrite t_bY2M_round rev_cons ihw //; exact: (pre_Motzkin_rcons l).
 Qed.
 
-Hypothesis A_final_state : forall l,
-  l \in Motzkin -> foldl t_M2bY {|0; 0|} l = {|0; 0|}.
+Hypothesis Motzkin_final_state : forall w,
+  w \in Motzkin -> M2bY_state {|0; 0|} w = {|0; 0|}.
 
 Lemma M2bYK_ : {in Motzkin, cancel M2bY bY2M}.
 Proof.
-move=> l Al; rewrite /bY2M -(A_final_state Al); apply: revM2bY_fromK.
+move=> w Mw; rewrite /bY2M -(Motzkin_final_state Mw); apply: revM2bY_fromK.
 exact: pre_Motzkin_Motzkin.
 Qed.
 
-Hypothesis B_final_state : forall l,
-  l \in balanced_Yam -> foldl t_bY2M {|0; 0|} (rev l) = {|0; 0|}.
+Hypothesis bYam_final_state : forall w,
+  w \in balanced_Yam -> bY2M_state {|0; 0|} (rev w) = {|0; 0|}.
 
 Lemma bY2MK_ : {in balanced_Yam, cancel bY2M M2bY}.
 Proof.
-by move=> l Bl; rewrite /M2bY -(B_final_state Bl) /bY2M revbY2M_fromK ?revK.
+by move=> l Bl; rewrite /M2bY -(bYam_final_state Bl) /bY2M revbY2M_fromK ?revK.
 Qed.
 
 End SufficientConditionsForCancel.
 
-
-(*--- A few useful technical surgery lemmas about M2bY and bY2M ---*)
-
-Lemma take_M2bY n l : M2bY (take n l) = take n (M2bY l).
-Proof. by rewrite /M2bY /M2bY_from /M2bY_states -take_scanl -take_pairmap. Qed.
-
-Lemma M2bY_from_cons c l w :
-  M2bY_from c (l :: w) = M2bY_out c (t_M2bY c l) :: M2bY_from (t_M2bY c l) w.
-Proof. by []. Qed.
-
-Lemma bY2M_from_cons c l w :
-  bY2M_from c (l :: w) = bY2M_out c (t_bY2M c l) :: bY2M_from (t_bY2M c l) w.
-Proof. by []. Qed.
-
-Lemma M2bY_from_rcons s w l : M2bY_from s (rcons w l) =
-  rcons (M2bY_from s w)
-        (M2bY_out (foldl t_M2bY s w) (t_M2bY (foldl t_M2bY s w) l)).
-Proof.
-by rewrite /= scanl_rcons -cats1 pairmap_cat /= last_scanl foldl_rcons cats1.
-Qed.
-
-Lemma M2bY_rcons  w l (s := foldl t_M2bY {|0; 0|} w) :
-  M2bY (rcons w l) = rcons (M2bY w) (M2bY_out s (t_M2bY s l)).
-Proof. by rewrite /M2bY M2bY_from_rcons. Qed.
-
-Lemma bY2M_from_rcons s w l : bY2M_from s (rcons w l) =
-  rcons (bY2M_from s w)
-        (bY2M_out (foldl t_bY2M s w) (t_bY2M (foldl t_bY2M s w) l)).
-Proof.
-by rewrite /= scanl_rcons -cats1 pairmap_cat /= last_scanl foldl_rcons cats1.
-Qed.
-
-Lemma bY2M_cons w l (s := foldl t_bY2M {|0; 0|} (rev w)) :
-  bY2M (l :: w) = (bY2M_out s (t_bY2M s l)) :: (bY2M w).
-Proof. by rewrite /bY2M rev_cons bY2M_from_rcons rev_rcons. Qed.
-
 (*--- Invariant of the M2bY transducer, by decoration with ghost variables. This
-      proves the two remaining facts about words in A, plus the important
-      missing property of M2bY : that its image is included in balanced_Yam ---*)
+      proves the two remaining facts about (pre)Motzkin words, plus the important
+      missing property of M2bY : that a Motzkin word is mapped to a  balanced
+      Yamanouchi ---*)
 
 (* The states of the automaton are augmented with 3 more natural numbers, that
    count respectively: the number of Dyck words (N, Se) processed so far (d1);
    the number of pseudo-Dyck words (NSe, W) in progress so
-   far (d2); the number of "free" occurrences of W processed so far (f) *)
+   far (d2); the number of "free" occurrences of W processed so far (f). These
+   numbers are here to retain an information which is otherwise lost during
+   computation, but they do not interfere with the computation nor its result.
+   Hence we coin these extra data "ghost variables", as in the vocabulary of
+   program verification. *)
 
 Record gstate :=
   GState {ct1: nat; ct2: nat; dy1 : nat; dy2 : nat; free : nat}.
@@ -634,7 +771,7 @@ Definition mkGState (c : state) (d1 d2 f : nat) : gstate :=
 
 Let g0 := GState 0 0 0 0 0.
 
-Definition state_of_gstate (g : gstate) :=
+Definition state_of_gstate (g : gstate) : state :=
   let: GState c1 c2 _ _ _ := g in State (c1, c2).
 
 (* Last case is junk *)
@@ -650,15 +787,22 @@ end.
 
 Definition gt_M2bY := nosimpl gt_M2bY_.
 
+Definition M2bY_gstate := foldl gt_M2bY.
+
+Lemma M2bY_gstate_rcons (g : gstate) (w : seq letter) (l : letter) :
+  M2bY_gstate g (rcons w l) = gt_M2bY (M2bY_gstate g w) l.
+Proof. exact: foldl_rcons. Qed.
 (* Forgeting the ghost information in a list of reached states *)
 
+Lemma state_of_gt_M2bY g l :
+  state_of_gstate (gt_M2bY g l) = t_M2bY (state_of_gstate g) l.
+Proof. by case: g => [[| ?] [|?]] /=; case: l. Qed.
 
-Lemma state_of_foldl_gt_M2bY s d1 d2 f w (g := mkGState s d1 d2 f) :
-  state_of_gstate (foldl gt_M2bY g w) = foldl t_M2bY s w.
+Lemma state_of_foldl_gt_M2bY c d1 d2 f w (g := mkGState c d1 d2 f) :
+  state_of_gstate (M2bY_gstate g w) = M2bY_state c w.
 Proof.
-have -> : s = state_of_gstate g by rewrite {}/g; case: s => [] [].
-elim: w g => [|h w ihw] //= g; rewrite {}ihw; congr foldl.
-by case: g=> c1 c2* {w} /=; case: h => //=; case: c1 => * //; case: c2 => *.
+have -> : c = state_of_gstate g by rewrite {}/g; case: c => [] [].
+by elim: w g => [|h w ihw] //= g; rewrite {}ihw state_of_gt_M2bY.
 Qed.
 
 
@@ -668,7 +812,7 @@ Qed.
 (* need to kind of reproduce this proof outside this one to ensure we never hit*)
 (* this  exceptional case... Can we do better? *)
 
-Lemma pA_gt_M2bY_inv w gi (g := foldl gt_M2bY gi w) :
+Lemma pA_gt_M2bY_inv w gi (g := M2bY_gstate gi w) :
   w \in pre_Motzkin ->
   [/\
 #N  w + dy1 gi + dy2 gi + ct1 gi + ct2 gi =
@@ -679,9 +823,10 @@ Lemma pA_gt_M2bY_inv w gi (g := foldl gt_M2bY gi w) :
         dy1 g  + ct2 g  + free g
 ].
 Proof.
-rewrite {}/g; elim/last_ind: w => [| w l ihw] /= pAwl=> //; rewrite !foldl_rcons.
+rewrite {}/g; elim/last_ind: w => [| w l ihw] /= pAwl=> //.
+rewrite !M2bY_gstate_rcons.
 have {ihw} /ihw := pre_Motzkin_rcons _ pAwl.
-move: (foldl gt_M2bY gi w) => c [eN eSe eW].
+move: (M2bY_gstate gi w) => c [eN eSe eW].
 case: l pAwl => pAwl; rewrite !count_mem_rcons !eqxx /=.
 - by rewrite !addSn {}eW {}eN {}eSe; case: c => * /=; split; ring.
 - by rewrite !addSn {}eW {}eN {}eSe; case: c => [] [|c1] * /=; split; ring.
@@ -700,31 +845,32 @@ Definition gnoex (l : letter) (g : gstate) :=
 Lemma gnoex_noex l g : gnoex l g = noex l (state_of_gstate g).
 Proof. by case: g. Qed.
 
-Lemma pA_gnoex w l g : rcons w l \in pre_Motzkin -> gnoex l (foldl gt_M2bY g w).
+Lemma pA_gnoex w l g : rcons w l \in pre_Motzkin -> gnoex l (M2bY_gstate g w).
 Proof.
 rewrite /gnoex; case: l; rewrite ?orbT // orbF -negb_and => pA.
 have /(pA_gt_M2bY_inv g) := pre_Motzkin_rcons _ pA.
-move: (foldl _ _ _) => [] c1 c2 d1 d2 f /= [] eN eSe _.
+move: (M2bY_gstate _ _) => [] c1 c2 d1 d2 f /= [] eN eSe _.
 apply: contraL (pre_Motzkin_rcons_Se pA); case/andP => /eqP e1 /eqP e2.
 suff /eqP-> : #Se w == #N w + (ct1 g + ct2 g) by rewrite -leqNgt leq_addr.
 by rewrite -(eqn_add2r (dy1 g + dy2 g)) addnAC !addnA eN eSe e1 e2 !addn0.
 Qed.
 
-Lemma pA_noex  w l s : rcons w l \in pre_Motzkin -> noex l (foldl t_M2bY s w).
+Lemma pre_Motzkin_noex  w l s :
+  rcons w l \in pre_Motzkin -> noex l (M2bY_state s w).
 Proof.
 move=> ?; rewrite -(state_of_foldl_gt_M2bY _ 0 0 0) -gnoex_noex; exact: pA_gnoex.
 Qed.
 
-Lemma A_final_state l : l \in Motzkin -> foldl t_M2bY {|0; 0|} l = {|0; 0|}.
+Lemma A_final_state l : l \in Motzkin -> M2bY_state {|0; 0|} l = {|0; 0|}.
 Proof.
 case/MotzkinP=> /(pA_gt_M2bY_inv g0); rewrite -(state_of_foldl_gt_M2bY _ 0 0 0).
-rewrite /= !addn0; move: (foldl _ _ _) => [] c1 c2 d1 d2 f /= [-> -> ->].
+rewrite /= !addn0; move: (M2bY_gstate _ _) => [] c1 c2 d1 d2 f /= [-> -> ->].
 rewrite -addnA addnC; move/(canRL (addnK _)); rewrite subnn.
 by case: c1 => [|?] //; case: c2.
 Qed.
 
 Theorem M2bYK : {in Motzkin, cancel M2bY bY2M}.
-Proof. apply: M2bYK_; [exact: pA_noex | exact: A_final_state]. Qed.
+Proof. apply: M2bYK_; [exact: pre_Motzkin_noex | exact: A_final_state]. Qed.
 
 Definition gM2bY_out gf gi :=
   let: (GState ci1 ci2 _ _ _) := gi in
@@ -735,13 +881,13 @@ Definition gM2bY_out gf gi :=
   else if (ci1 == cf1) && (cf2 == ci2.+1) then W
   else Se.
 
-Definition gM2bY_states (g : gstate) (w : seq letter) : seq gstate :=
+Definition gM2bY_states_seq (g : gstate) (w : seq letter) : seq gstate :=
   scanl gt_M2bY g w.
 
-Arguments gM2bY_states / g w.
+Arguments gM2bY_states_seq / g w.
 
 Definition gM2bY_from (g : gstate) (w : seq letter) : seq letter :=
-  pairmap gM2bY_out g (gM2bY_states g w).
+  pairmap gM2bY_out g (gM2bY_states_seq g w).
 
 Arguments gM2bY_from / g w.
 
@@ -765,11 +911,11 @@ elim/last_ind: w => [| w l ihw] //; rewrite gM2bY_from_rcons -ihw.
 by rewrite M2bY_from_rcons gM2bY_out_state_of -!foldl_rcons !state_of_foldl_gt_M2bY.
 Qed.
 
-Lemma pA_noex_ghost l h g : rcons l h \in pre_Motzkin ->
+Lemma pre_Motzkin_noex_ghost l h g : rcons l h \in pre_Motzkin ->
   noex h (state_of_gstate (foldl gt_M2bY g l)).
 Proof.
 have -> : g = mkGState {|ct1 g; ct2 g|} (dy1 g) (dy2 g) (free g) by case: g.
-rewrite state_of_foldl_gt_M2bY; exact: pA_noex.
+rewrite state_of_foldl_gt_M2bY; exact: pre_Motzkin_noex.
 Qed.
 
 
@@ -785,7 +931,7 @@ Lemma pA_gM2bY_inv wi gi (g := foldl gt_M2bY gi wi) (wo := gM2bY_from gi wi) :
 Proof.
 rewrite {}/g {}/wo; elim/last_ind: wi => [| w l ihw] pAwl=> //.
 have {ihw} /ihw := pre_Motzkin_rcons _ pAwl.
-have := pA_noex_ghost gi pAwl.
+have := pre_Motzkin_noex_ghost gi pAwl.
 rewrite gM2bY_from_rcons !foldl_rcons.
 set wo := gM2bY_from gi w.
 move: (foldl gt_M2bY gi w) => g noex [eN eSe eW].
@@ -842,27 +988,27 @@ Qed.
 
 Lemma statesbY2MK c w (wo := bY2M_from c w) :
   c :: scanl t_bY2M c w =
-  rcons (rev (scanl t_M2bY (foldl t_bY2M c w) (rev wo))) (foldl t_bY2M c w).
+  rcons (rev (scanl t_M2bY (bY2M_state c w) (rev wo))) (bY2M_state c w).
 Proof.
 rewrite {}/wo; elim/last_ind: w => [| l w ihw] //.
 rewrite scanl_rcons -rcons_cons; congr rcons; rewrite {}ihw.
-rewrite bY2M_from_rcons rev_rcons foldl_rcons; set co := foldl _ _ _.
+rewrite bY2M_from_rcons rev_rcons bY2M_state_rcons.
 by rewrite [scanl _ _ (_ :: _)]/= t_M2bY_round rev_cons.
 Qed.
 
 Lemma statesM2bYK c w (wo := M2bY_from c w) :
   c :: scanl t_M2bY c w =
-  rcons (rev (scanl t_bY2M (foldl t_M2bY c w) (rev wo))) (foldl t_M2bY c w).
+  rcons (rev (scanl t_bY2M (M2bY_state c w) (rev wo))) (M2bY_state c w).
 Proof.
 rewrite {}/wo; elim/last_ind: w => [| l w ihw] //.
 rewrite scanl_rcons -rcons_cons; congr rcons; rewrite {}ihw.
-rewrite M2bY_from_rcons rev_rcons foldl_rcons; set co := foldl _ _ _.
+rewrite M2bY_from_rcons rev_rcons M2bY_state_rcons.
 by rewrite [scanl _ _ (_ :: _)]/= t_bY2M_round rev_cons.
 Qed.
 
 
 
-Lemma ct2_foldl_t_bY2M gi w (g := foldl t_bY2M gi w) :
+Lemma ct2_foldl_t_bY2M gi w (g := bY2M_state gi w) :
   (forall n, #W (drop n w) <= #Se (drop n w)) -> g.2 <= gi.2.
 Proof.
 rewrite {}/g.
@@ -870,17 +1016,17 @@ move: {2}(size w) (leqnn (size w)) => n; elim: n w gi => [| n ihn] w gi.
   by rewrite leqn0 size_eq0 => /eqP ->.
 rewrite leq_eqVlt; case/orP; last by apply: ihn.
 case/lastP: w => [| w l] //; rewrite size_rcons eqSS => /eqP ssn.
-case: l => leWSe; rewrite foldl_rcons.
-- have -> : (t_bY2M (foldl t_bY2M gi w) N).2 = (foldl t_bY2M gi w).2.
-    by case: (foldl _ _ _) => [] [] [].
+case: l => leWSe; rewrite bY2M_state_rcons.
+- have -> : (t_bY2M (bY2M_state gi w) N).2 = (bY2M_state gi w).2.
+    by case: (bY2M_state _ _) => [] [] [].
   apply: ihn => [| k]; first by rewrite ssn.
   have := leWSe k; case: (leqP k (size w)) => hkss.
     by rewrite drop_rcons // !count_mem_rcons /=.
   rewrite !drop_oversize ?size_rcons //; exact: ltnW.
 - by move: (leWSe (size w)); rewrite -cats1 drop_cat ltnn subnn drop0.
 - case hyp : [forall x : 'I_(size w).+1, (#W (drop x w) <= #Se (drop x w))].
-  + have h : (t_bY2M (foldl t_bY2M gi w) Se).2 <= (foldl t_bY2M gi w).2.
-      by case: (foldl _ _ _) => [] [] c1 [|c2] /=.
+  + have h : (t_bY2M (bY2M_state gi w) Se).2 <= (bY2M_state gi w).2.
+      by case: (bY2M_state  _ _) => [] [] c1 [|c2] /=.
     apply: leq_trans h _; apply: ihn=> [|k]; rewrite ?ssn //.
     case: (leqP k (size w)) => hk; last by rewrite drop_oversize //; exact: ltnW.
     by rewrite -ltnS in hk; have /= := (forallP hyp) (Ordinal hk).
@@ -916,19 +1062,18 @@ case: l => leWSe; rewrite foldl_rcons.
      have := (leWSe i).
      rewrite ew12 rcons_cat !drop_cat hi !count_cat !count_mem_rcons /=.
      by rewrite !add1n !add0n WSew2 leq_add2r.
-  rewrite ew12 foldl_cat /= {Pk max_k leWSe}.
-  set g := foldl _ _ w1.
+  rewrite ew12 bY2M_state_cat /= {Pk max_k leWSe}.
+  set g := bY2M_state _ w1.
   have hg : g.2 <= gi.2.
     by apply: ihn => //; rewrite /w1 size_take -ssn; case: ifP => //; move/ltnW.
   apply: leq_trans hg; case: g => [] [c1 c2] /=.
   have -> : t_bY2M {|c1; c2|} W = {|c1; c2.+1|} by [].
-  set g := foldl _ _ _.
+  set g := bY2M_state _ _.
   suff : g.2 <= c2.+1 by case: g => [] [g1 [|g2]].
   by apply: ihn => //; rewrite /w2 size_drop -ssn leq_subr.
 Qed.
 
-
-Lemma ct1_foldl_t_bY2M gi w (g := foldl t_bY2M gi w) :
+Lemma ct1_foldl_t_bY2M gi w (g := bY2M_state gi w) :
   (forall n, #Se (drop n w) <= #N (drop n w)) -> g.1 <= gi.1.
 Proof.
 rewrite {}/g.
@@ -936,11 +1081,11 @@ move: {2}(size w) (leqnn (size w)) => n; elim: n w gi => [| n ihn] w gi.
   by rewrite leqn0 size_eq0 => /eqP ->.
 rewrite leq_eqVlt; case/orP; last by apply: ihn.
 case/lastP: w => [| w l] //; rewrite size_rcons eqSS => /eqP ssn.
-case: l => leWSe; rewrite foldl_rcons.
+case: l => leWSe; rewrite bY2M_state_rcons.
 - (* aie *)
 case hyp : [forall x : 'I_(size w).+1, (#Se (drop x w) <= #N (drop x w))].
-  + have h : (t_bY2M (foldl t_bY2M gi w) N).1 <= (foldl t_bY2M gi w).1.
-      by case: (foldl _ _ _) => [] [] [|c1] c2 /=.
+  + have h : (t_bY2M (bY2M_state gi w) N).1 <= (bY2M_state gi w).1.
+      by case: (bY2M_state _  _) => [] [] [|c1] c2 /=.
     apply: leq_trans h _; apply: ihn=> [|k]; rewrite ?ssn //.
     case: (leqP k (size w)) => hk; last by rewrite drop_oversize //; exact: ltnW.
     by rewrite -ltnS in hk; have /= := (forallP hyp) (Ordinal hk).
@@ -977,21 +1122,21 @@ case hyp : [forall x : 'I_(size w).+1, (#Se (drop x w) <= #N (drop x w))].
      have := (leWSe i).
      rewrite ew12 rcons_cat !drop_cat hi !count_cat !count_mem_rcons /=.
      by rewrite !add1n !add0n WSew2 leq_add2r.
-  rewrite ew12 foldl_cat /= {Pk max_k leWSe}.
-  set g := foldl _ _ w1.
+  rewrite ew12 bY2M_state_cat /= {Pk max_k leWSe}.
+  set g := bY2M_state _ w1.
   have hg : g.1 <= gi.1.
     by apply: ihn => //; rewrite /w1 size_take -ssn; case: ifP => //; move/ltnW.
   apply: leq_trans hg; case: g => [] [] c1 [|c2].
    + have -> /= : t_bY2M {|c1; 0|} Se = {|c1.+1; 0|} by [].
-     set g := foldl _ _ _.
+     set g := bY2M_state _ _.
      suff : g.1 <= c1.+1 by case: g => [] [[|g1] g2] /=.
      by apply: ihn => //; rewrite /w2 size_drop -ssn leq_subr.
    + have -> /= : t_bY2M {|c1; c2.+1|} Se = {|c1.+1; c2|} by [].
-     set g := foldl _ _ _.
+     set g :=  bY2M_state _ _.
      suff : g.1 <= c1.+1 by case: g => [] [[|g1] g2] /=.
      by apply: ihn => //; rewrite /w2 size_drop -ssn leq_subr.
-- have -> : (t_bY2M (foldl t_bY2M gi w) W).1 = (foldl t_bY2M gi w).1.
-    by case: (foldl _ _ _) => [] [] [].
+- have -> : (t_bY2M (bY2M_state gi w) W).1 = (bY2M_state gi w).1.
+    by case: ( bY2M_state _ _) => [] [] [].
   apply: ihn => [| k]; first by rewrite ssn.
   have := leWSe k; case: (leqP k (size w)) => hkss.
     by rewrite drop_rcons // !count_mem_rcons /=.
@@ -999,25 +1144,26 @@ case hyp : [forall x : 'I_(size w).+1, (#Se (drop x w) <= #N (drop x w))].
 - by move: (leWSe (size w)); rewrite -cats1 drop_cat ltnn subnn drop0.
 Qed.
 
+
 Lemma B_final_state w : w \in Yamanouchi ->
-                              foldl t_bY2M {|0; 0|} (rev w) = {|0; 0|}.
+                              bY2M_state {|0; 0|} (rev w) = {|0; 0|}.
 Proof.
 move/YamanouchiP=> Bw.
-have : (foldl t_bY2M {|0; 0|} (rev w)).1 = 0.
+have : (bY2M_state {|0; 0|} (rev w)).1 = 0.
   apply/eqP; rewrite -leqn0; apply: ct1_foldl_t_bY2M => n.
   case: (ltnP (size w) n) => hn.
     by rewrite drop_oversize // size_rev; exact: ltnW.
   rewrite -[w](cat_take_drop (size w - n)) rev_cat.
   rewrite drop_size_cat; last by rewrite size_rev size_drop // subKn.
   by rewrite !count_rev; case/andP: (Bw (size w - n)).
-have : (foldl t_bY2M {|0; 0|} (rev w)).2 = 0.
+have : (bY2M_state {|0; 0|} (rev w)).2 = 0.
   apply/eqP; rewrite -leqn0; apply: ct2_foldl_t_bY2M => n.
   case: (ltnP (size w) n) => hn.
     by rewrite drop_oversize // size_rev; exact: ltnW.
   rewrite -[w](cat_take_drop (size w - n)) rev_cat.
   rewrite drop_size_cat; last by rewrite size_rev size_drop // subKn.
   by rewrite !count_rev; case/andP: (Bw (size w - n)).
-by case: (foldl _ _ _) => [] [c1 c2] /= -> ->.
+by case: (bY2M_state _ _) => [] [c1 c2] /= -> ->.
 Qed.
 
 Theorem bY2MK : {in balanced_Yam, cancel bY2M M2bY}.
@@ -1079,7 +1225,7 @@ case: l; rewrite !count_mem_rcons !eqxx /=.
 Qed.
 
 Lemma state_of_foldl_gt_bY2M c g w : state_of_gbstate g = c ->
-  state_of_gbstate (foldl gt_bY2M g w) = foldl t_bY2M c w.
+  state_of_gbstate (foldl gt_bY2M g w) = bY2M_state c w.
 Proof.
 move<-.
 elim: w g => [|h w ihw] //= g; rewrite {}ihw; congr foldl.
@@ -1103,13 +1249,13 @@ Lemma gbY2M_out_gbY2M gi gf ci cf :
 Proof. by case: gi=> ? ? ? ? ? ?/= <-; case: gf => ? ? ? ? ? ? /= <-. Qed.
 
 
-Definition gbY2M_states (g : gbstate) (w : seq letter) : seq gbstate :=
+Definition gbY2M_states_seq (g : gbstate) (w : seq letter) : seq gbstate :=
   scanl gt_bY2M g w.
 
-Arguments gbY2M_states / g w.
+Arguments gbY2M_states_seq / g w.
 
 Definition gbY2M_from (g : gbstate) (w : seq letter) : seq letter :=
-  pairmap gbY2M_out g (gbY2M_states g w).
+  pairmap gbY2M_out g (gbY2M_states_seq g w).
 
 Arguments gbY2M_from / g w.
 
@@ -1183,22 +1329,6 @@ split => [{eSe1 eSe2 eW1 eW2}|{eN1 eN2 eW1 eW2} | {eSe1 eSe2 eN1 eN2}].
   by rewrite [_ + _ + (_ + _)]addnAC addnA eW2 -!addnA !eqn_add2l addnC.
 Qed.
 
-Lemma take_bY2M n w (w2 := drop n w) (c := foldl t_bY2M {|0; 0|} (rev w2)) :
-  take n (bY2M w) = rev (bY2M_from c (rev (take n w))).
-Proof.
-rewrite /bY2M -[w](cat_take_drop n) rev_cat /bY2M_from /bY2M_states.
-rewrite scanl_cat pairmap_cat rev_cat last_scanl.
-set w1 := take _ w.
-rewrite -/(bY2M_from c (rev w1)) -/(bY2M_from {|0; 0|} (rev w2)).
-case: (ltnP n (size w)) => hn.
-  rewrite take_size_cat; first by rewrite take_size_cat // size_take hn.
-  by rewrite size_rev size_bY2M_from size_rev size_take hn.
-have -> : w1 = w by rewrite /w1 take_oversize.
-have -> : w2 = [::] by rewrite /w2 drop_oversize.
-rewrite take_cat ltnNge size_rev size_bY2M_from size_rev hn /=.
-by rewrite take_cat ltnNge hn /= drop_oversize //= !cats0.
-Qed.
-
 Lemma gB_final_state w : w \in Yamanouchi ->
   state_of_gbstate (foldl gt_bY2M gb0 (rev w)) = {|0; 0|}.
 Proof. rewrite (@state_of_foldl_gt_bY2M {|0; 0|}) //; exact: B_final_state. Qed.
@@ -1207,7 +1337,7 @@ Lemma pA_bY2M_pB w : w \in Yamanouchi -> bY2M w \in pre_Motzkin.
 Proof.
 move=> hl; apply/pre_MotzkinP => n.
 rewrite take_bY2M !count_rev.
-set c := foldl _ _ _; set w1 := take _ w.
+set c := bY2M_state  _ _; set w1 := take _ w.
 pose gc := foldl gt_bY2M gb0 (rev (drop n w)).
 have [] := gbY2M_from_inv (rev w1) gc.
 set gf := foldl _ _ _.
@@ -1247,7 +1377,9 @@ Qed.
 
 Theorem AB_eq_card n : #|Motzkin_tuple n| = #|balanced_Yam_tuple n|.
 Proof.
-apply: eq_card_Motzkin_bYam_suff.
+apply: (@eq_card_Motzkin_bYam_suff bY2M M2bY).
+- apply: size_M2bY.
+- apply: size_bY2M.
 - apply: bY2MK.
 - apply: M2bYK.
 - apply: B_M2bY_A.
