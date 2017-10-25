@@ -520,20 +520,20 @@ M2bY and bY2M take (0, 0) as initial state c.
 Definition M2bY_from (c : state) (w : seq letter) : seq letter :=
   pairmap M2bY_out c (M2bY_states_seq c w).
 
-Arguments M2bY_from / c w : simpl never.
+Arguments M2bY_from c w : simpl never.
 
 Definition M2bY := M2bY_from {|0; 0|}.
 
-Arguments M2bY / : simpl never.
+Arguments M2bY : simpl never.
 
 Definition bY2M_from (c : state) (w : seq letter) : seq letter :=
   pairmap bY2M_out c (bY2M_states_seq c w).
 
-Arguments bY2M_from / c w : simpl never.
+Arguments bY2M_from c w : simpl never.
 
 Definition bY2M (w : seq letter) := rev (bY2M_from {|0; 0|} (rev w)).
 
-Arguments bY2M / w : simpl never.
+Arguments bY2M w : simpl never.
 
 (* A few computations to see the translation at work: *)
 
@@ -711,8 +711,16 @@ Section SufficientConditionsForCancel.
 (* We leave as (temporary) hypotheses the facts that requires introducing
    ghost variables: *)
 
-Hypothesis pre_Motzkin_noex : forall l w c,
-   rcons l w \in pre_Motzkin -> noex w (M2bY_state c l).
+Hypothesis bYam_final_state : forall w,
+  w \in balanced_Yam -> bY2M_state {|0; 0|} (rev w) = {|0; 0|}.
+
+Lemma bY2MK_ : {in balanced_Yam, cancel bY2M M2bY}.
+Proof.
+by move=> l Bl; rewrite /M2bY -(bYam_final_state Bl) /bY2M revbY2M_fromK ?revK.
+Qed.
+
+Hypothesis pre_Motzkin_noex : forall w l c,
+   rcons w l \in pre_Motzkin -> noex l (M2bY_state c w).
 
 Lemma revM2bY_fromK l c : l \in pre_Motzkin ->
     rev (bY2M_from (M2bY_state c l) (rev (M2bY_from c l))) = l.
@@ -730,14 +738,6 @@ Lemma M2bYK_ : {in Motzkin, cancel M2bY bY2M}.
 Proof.
 move=> w Mw; rewrite /bY2M -(Motzkin_final_state Mw); apply: revM2bY_fromK.
 exact: pre_Motzkin_Motzkin.
-Qed.
-
-Hypothesis bYam_final_state : forall w,
-  w \in balanced_Yam -> bY2M_state {|0; 0|} (rev w) = {|0; 0|}.
-
-Lemma bY2MK_ : {in balanced_Yam, cancel bY2M M2bY}.
-Proof.
-by move=> l Bl; rewrite /M2bY -(bYam_final_state Bl) /bY2M revbY2M_fromK ?revK.
 Qed.
 
 End SufficientConditionsForCancel.
